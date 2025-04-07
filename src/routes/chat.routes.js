@@ -1,10 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const Chat = require('../models/chat.model');
-const { authenticateToken } = require('../middleware/auth.middleware');
+const passport = require('passport');
+const Team = require('../models/team.model');
+
+// Middleware to authenticate JWT token
+const authenticate = passport.authenticate('jwt', { session: false });
 
 // Get chat history for a match
-router.get('/matches/:matchId', authenticateToken, async (req, res) => {
+router.get('/matches/:matchId', async (req, res) => {
   try {
     const messages = await Chat.find({ matchId: req.params.matchId })
       .sort({ timestamp: 1 })
@@ -18,17 +22,23 @@ router.get('/matches/:matchId', authenticateToken, async (req, res) => {
 });
 
 // Send a message in a match chat
-router.post('/matches/:matchId', authenticateToken, async (req, res) => {
+router.post('/matches/:matchId', async (req, res) => {
   try {
-    const { content } = req.body;
+    const { content, senderTeam } = req.body;
+    const matchId = req.params.matchId;
 
     if (!content) {
       return res.status(400).json({ message: 'Message content is required' });
     }
 
+    if (!senderTeam) {
+      return res.status(400).json({ message: 'Sender team ID is required' });
+    }
+
+    // Create and save the message
     const message = new Chat({
-      matchId: req.params.matchId,
-      senderTeam: req.team._id,
+      matchId,
+      senderTeam,
       content
     });
 
@@ -36,6 +46,18 @@ router.post('/matches/:matchId', authenticateToken, async (req, res) => {
 
     // Populate sender team details
     await message.populate('senderTeam', 'teamName collegeName');
+
+    // Get the Socket.IO instance
+    const io = req.app.get('io');
+    
+    // Emit the new message to all clients in the match room
+    io.to(matchId).emit('new-message', {
+      _id: message._id,
+      matchId: message.matchId,
+      senderTeam: message.senderTeam,
+      content: message.content,
+      timestamp: message.timestamp
+    });
 
     res.status(201).json(message);
   } catch (error) {
