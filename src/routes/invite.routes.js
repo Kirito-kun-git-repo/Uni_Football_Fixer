@@ -5,6 +5,9 @@ const mongoose = require('mongoose');
 
 const Match = require('../models/match.model');
 const MatchInvite = require('../models/matchInvite.model');
+const Notification = require('../models/notification.model');
+const { sendMatchInviteEmail, sendMatchAcceptanceEmail } = require('../utils/email');
+const Team = require('../models/team.model');
 
 // Middleware to authenticate JWT token
 const authenticate = passport.authenticate('jwt', { session: false });
@@ -65,11 +68,41 @@ router.post('/:matchId', authenticate, async (req, res) => {
 
     const savedInvite = await newInvite.save();
 
+    // Fetch receiver team details for email
+    const receiverTeam = await Team.findById(receiverTeamId);
+    if (!receiverTeam) {
+      return res.status(404).json({ message: 'Receiver team not found' });
+    }
+
     // Populate team details for response
     const populatedInvite = await MatchInvite.findById(savedInvite._id)
-      .populate('senderTeam', 'name')
-      .populate('receiverTeam', 'name')
+      .populate('senderTeam', 'teamName collegeName')
+      .populate('receiverTeam', 'teamName collegeName')
       .populate('matchRequest', 'matchTime location');
+
+    // Create notification for the receiver
+    const notification = new Notification({
+      teamId: receiverTeamId,
+      message: `New match invite from ${req.user.teamName}`,
+      type: 'invite',
+      relatedMatch: matchId,
+      relatedInvite: savedInvite._id
+    });
+
+    await notification.save();
+
+    // Send email notification
+    await sendMatchInviteEmail(
+      receiverTeam.email,
+      {
+        matchTime: matchRequest.matchTime,
+        location: matchRequest.location
+      },
+      {
+        teamName: req.user.teamName,
+        collegeName: req.user.collegeName
+      }
+    );
 
     res.status(201).json(populatedInvite);
 
@@ -263,6 +296,29 @@ router.put('/:inviteId/accept', authenticate, async (req, res) => {
       }
     );
 
+    // Create notification for the sender
+    const notification = new Notification({
+      teamId: invite.senderTeam._id,
+      message: `Your match invite has been accepted by ${req.user.name}`,
+      type: 'match_update',
+      relatedMatch: invite.matchRequest._id
+    });
+
+    await notification.save();
+
+    // Send email notification
+    await sendMatchAcceptanceEmail(
+      invite.senderTeam.email,
+      {
+        matchTime: invite.matchRequest.matchTime,
+        location: invite.matchRequest.location
+      },
+      {
+        teamName: req.user.name,
+        collegeName: req.user.collegeName
+      }
+    );
+
     // Reject all other pending invites for this match
     await MatchInvite.updateMany(
       {
@@ -275,6 +331,23 @@ router.put('/:inviteId/accept', authenticate, async (req, res) => {
         respondedAt: new Date()
       }
     );
+
+    // Create notifications for rejected invites
+    const rejectedInvites = await MatchInvite.find({
+      matchRequest: invite.matchRequest._id,
+      _id: { $ne: inviteId },
+      status: 'rejected'
+    });
+
+    for (const rejectedInvite of rejectedInvites) {
+      const notification = new Notification({
+        teamId: rejectedInvite.senderTeam,
+        message: `Your match invite has been rejected as another team accepted the match`,
+        type: 'match_update',
+        relatedMatch: invite.matchRequest._id
+      });
+      await notification.save();
+    }
 
     // Get the updated invite with all populated fields
     const updatedInvite = await MatchInvite.findById(inviteId)
