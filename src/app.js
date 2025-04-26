@@ -1,3 +1,8 @@
+// Add this with your other route imports
+
+
+// Add this with your other app.use() calls
+app.use('/api/admin', adminRoutes);
 const express = require('express');
 const mongoose = require('mongoose');
 const passport = require('passport');
@@ -23,12 +28,14 @@ const matchRoutes = require('./routes/match.routes');
 const inviteRoutes = require('./routes/invite.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const chatRoutes = require('./routes/chat.routes');
+const adminRoutes = require('./routes/admin.routes');
 
 app.use('/api/teams', teamRoutes);
 app.use('/api/matches', matchRoutes);
 app.use('/api/invites', inviteRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Create HTTP server
 console.log('Creating HTTP server...');

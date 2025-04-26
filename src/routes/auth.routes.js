@@ -2,12 +2,21 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const multer = require('multer');
 const Team = require('../models/team.model');
 
+// Multer configuration (memory storage)
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+});
+
 // Team Registration
-router.post('/register', async (req, res) => {
+router.post('/register', upload.single('profilePicture'), async (req, res) => {
   try {
     const { teamName, collegeName, email, password } = req.body;
+    let profilePictureBase64 = null;
 
     // Validate required fields
     if (!teamName || !collegeName || !email || !password) {
@@ -24,11 +33,16 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    // Check if email already exists
-    const existingTeam = await Team.findOne({ email });
+    // Handle image buffer, convert to base64
+    if (req.file) {
+      profilePictureBase64 = req.file.buffer.toString('base64');
+    }
+
+    // Check if team name or email already exists
+    const existingTeam = await Team.findOne({ $or: [{ teamName }, { email }] });
     if (existingTeam) {
-      return res.status(400).json({
-        message: 'A team with this email already exists'
+      return res.status(400).json({ 
+        message: existingTeam.teamName === teamName ? 'Team name already exists' : 'Email already registered'
       });
     }
 
@@ -41,7 +55,8 @@ router.post('/register', async (req, res) => {
       teamName,
       collegeName,
       email,
-      password: hashedPassword
+      password: hashedPassword,
+      profilePicture: profilePictureBase64
     });
 
     // Save the team
@@ -61,7 +76,8 @@ router.post('/register', async (req, res) => {
         _id: savedTeam._id,
         teamName: savedTeam.teamName,
         collegeName: savedTeam.collegeName,
-        email: savedTeam.email
+        email: savedTeam.email,
+        profilePicture: savedTeam.profilePicture
       },
       token
     });
@@ -116,7 +132,8 @@ router.post('/login', async (req, res) => {
         _id: team._id,
         teamName: team.teamName,
         collegeName: team.collegeName,
-        email: team.email
+        email: team.email,
+        profilePicture: team.profilePicture
       },
       token
     });

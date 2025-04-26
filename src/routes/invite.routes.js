@@ -259,9 +259,10 @@ router.put('/:inviteId/accept', authenticate, async (req, res) => {
 
     // Find the invite with populated match details
     const invite = await MatchInvite.findById(inviteId)
-      .populate('senderTeam', 'teamName collegeName')
-      .populate('receiverTeam', 'teamName collegeName')
-      .populate('matchRequest', 'matchTime location status');
+  .populate('senderTeam', 'teamName collegeName email')  // 👈 add email here
+  .populate('receiverTeam', 'teamName collegeName')
+  .populate('matchRequest', 'matchTime location status');
+
 
     if (!invite) {
       return res.status(404).json({ message: 'Invite not found' });
@@ -299,7 +300,7 @@ router.put('/:inviteId/accept', authenticate, async (req, res) => {
     // Create notification for the sender
     const notification = new Notification({
       teamId: invite.senderTeam._id,
-      message: `Your match invite has been accepted by ${req.user.name}`,
+      message: `Your match invite has been accepted by ${invite.receiverTeam.teamName}`,
       type: 'match_update',
       relatedMatch: invite.matchRequest._id
     });
@@ -314,8 +315,8 @@ router.put('/:inviteId/accept', authenticate, async (req, res) => {
         location: invite.matchRequest.location
       },
       {
-        teamName: req.user.name,
-        collegeName: req.user.collegeName
+        teamName: invite.receiverTeam.teamName,
+        collegeName: invite.receiverTeam.collegeName
       }
     );
 

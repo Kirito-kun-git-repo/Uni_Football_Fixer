@@ -15,6 +15,7 @@ const { initializePassport } = require('./config/passport');
 const teamRoutes = require('./routes/team.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const chatRoutes = require('./routes/chat.routes');
+const adminRoutes =require('./routes/admin.routes');
 
 // Import Socket.IO setup
 const initializeSocket = require('./socket/socket');
@@ -51,7 +52,7 @@ app.use('/api/matches', matchRoutes);
 app.use('/api/invites', inviteRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/chat', chatRoutes);
-
+app.use('/api/admin', adminRoutes);
 // Database connection
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => {

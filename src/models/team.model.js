@@ -23,6 +23,12 @@ const teamSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  profilePicture: {
+    // Optional field to store the URL or path to the team's profile picture.
+    type: String,
+    required: false,
+    trim: true
+  },
   createdAt: {
     type: Date,
     default: Date.now
