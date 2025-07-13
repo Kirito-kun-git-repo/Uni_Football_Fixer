@@ -2,19 +2,19 @@ const nodemailer = require('nodemailer');
 
 console.log('Email configuration:', {
   user: process.env.EMAIL_USER,
-  hasPassword: !!process.env.EMAIL_APP_PASSWORD
+  hasPassword: !!process.env.EMAIL_APP_PASSWORD,
 });
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_APP_PASSWORD
-  }
+    pass: process.env.EMAIL_APP_PASSWORD,
+  },
 });
 
 // Verify transporter configuration
-transporter.verify(function(error, success) {
+transporter.verify(function (error, success) {
   if (error) {
     console.error('Email transporter verification failed:', error);
   } else {
@@ -27,7 +27,7 @@ const sendEmail = async (to, subject, text, html) => {
     console.log('Attempting to send email:', {
       from: process.env.EMAIL_USER,
       to,
-      subject
+      subject,
     });
 
     const mailOptions = {
@@ -35,7 +35,7 @@ const sendEmail = async (to, subject, text, html) => {
       to,
       subject,
       text,
-      html
+      html,
     };
 
     const info = await transporter.sendMail(mailOptions);
@@ -51,12 +51,12 @@ const sendMatchInviteEmail = async (to, matchDetails, senderTeam) => {
   console.log('Preparing match invite email:', {
     to,
     matchDetails,
-    senderTeam
+    senderTeam,
   });
 
   const subject = 'New Match Invite - Football Fixer';
   const text = `You have received a new match invite from ${senderTeam.teamName} (${senderTeam.collegeName}).\n\nMatch Details:\nTime: ${matchDetails.matchTime}\nLocation: ${matchDetails.location}\n\nPlease log in to your account to respond to this invite.`;
-  
+
   const html = `
     <h2>New Match Invite</h2>
     <p>You have received a new match invite from <strong>${senderTeam.teamName}</strong> (${senderTeam.collegeName}).</p>
@@ -75,12 +75,12 @@ const sendMatchAcceptanceEmail = async (to, matchDetails, acceptingTeam) => {
   console.log('Preparing match acceptance email:', {
     to,
     matchDetails,
-    acceptingTeam
+    acceptingTeam,
   });
 
   const subject = 'Match Invite Accepted - Football Fixer';
   const text = `Your match invite has been accepted by ${acceptingTeam.teamName} (${acceptingTeam.collegeName}).\n\nMatch Details:\nTime: ${matchDetails.matchTime}\nLocation: ${matchDetails.location}\n\nPlease log in to your account to view the match details.`;
-  
+
   const html = `
     <h2>Match Invite Accepted</h2>
     <p>Your match invite has been accepted by <strong>${acceptingTeam.teamName}</strong> (${acceptingTeam.collegeName}).</p>
@@ -95,8 +95,25 @@ const sendMatchAcceptanceEmail = async (to, matchDetails, acceptingTeam) => {
   return sendEmail(to, subject, text, html);
 };
 
+const sendMatchSettledEmail = async (to, matchDetails, senderTeam, receiverTeam) => {
+  const subject = 'Match Settled - Football Fixer';
+  const text = `The match between ${senderTeam.teamName} (${senderTeam.collegeName}) and ${receiverTeam.teamName} (${receiverTeam.collegeName}) has been settled!\n\nMatch Details:\nTime: ${matchDetails.matchTime}\nLocation: ${matchDetails.location}\n\nPlease log in to your account for more details.`;
+  const html = `
+    <h2>Match Settled</h2>
+    <p>The match between <strong>${senderTeam.teamName}</strong> (${senderTeam.collegeName}) and <strong>${receiverTeam.teamName}</strong> (${receiverTeam.collegeName}) has been settled!</p>
+    <h3>Match Details:</h3>
+    <ul>
+      <li>Time: ${matchDetails.matchTime}</li>
+      <li>Location: ${matchDetails.location}</li>
+    </ul>
+    <p>Please log in to your account for more details.</p>
+  `;
+  return sendEmail(to, subject, text, html);
+};
+
 module.exports = {
   sendEmail,
   sendMatchInviteEmail,
-  sendMatchAcceptanceEmail
-}; 
+  sendMatchAcceptanceEmail,
+  sendMatchSettledEmail,
+};

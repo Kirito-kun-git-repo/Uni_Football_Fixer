@@ -1,3 +1,4 @@
+console.log('auth.middleware.js LOADED');
 const jwt = require('jsonwebtoken');
 const Team = require('../models/team.model');
 
@@ -18,6 +19,7 @@ const authenticateToken = async (req, res, next) => {
     }
 
     req.team = team;
+    console.log('authenticateToken: req.team =', req.team);
     next();
   } catch (error) {
     if (error.name === 'JsonWebTokenError') {
@@ -32,5 +34,5 @@ const authenticateToken = async (req, res, next) => {
 };
 
 module.exports = {
-  authenticateToken
-}; 
+  authenticateToken,
+};

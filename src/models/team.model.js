@@ -5,34 +5,34 @@ const teamSchema = new mongoose.Schema({
     type: String,
     required: true,
     unique: true,
-    trim: true
+    trim: true,
   },
   collegeName: {
     type: String,
     required: true,
-    trim: true
+    trim: true,
   },
   email: {
     type: String,
     required: true,
     unique: true,
     trim: true,
-    lowercase: true
+    lowercase: true,
   },
   password: {
     type: String,
-    required: true
+    required: true,
   },
   profilePicture: {
     // Optional field to store the URL or path to the team's profile picture.
     type: String,
     required: false,
-    trim: true
+    trim: true,
   },
   createdAt: {
     type: Date,
-    default: Date.now
-  }
+    default: Date.now,
+  },
 });
 
-module.exports = mongoose.model('Team', teamSchema); 
+module.exports = mongoose.model('Team', teamSchema);

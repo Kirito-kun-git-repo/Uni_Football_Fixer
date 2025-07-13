@@ -1,10 +1,13 @@
 # Football Match Request System Guide
 
 ## Overview
+
 This guide explains how to use the Football Match Request System, which allows college football teams to create matches, send invites, and manage their football games.
 
 ## Authentication
+
 All routes (except viewing public matches) require JWT authentication. Include the token in the Authorization header:
+
 ```
 Authorization: Bearer <your_jwt_token>
 ```
@@ -12,7 +15,9 @@ Authorization: Bearer <your_jwt_token>
 ## Real-World Example Scenario
 
 ### 1. Team Registration and Login
+
 **Team A (MIT Warriors) wants to join the system:**
+
 ```http
 POST /api/teams/register
 {
@@ -21,7 +26,9 @@ POST /api/teams/register
   "password": "securePassword123"
 }
 ```
+
 After registration, Team A logs in:
+
 ```http
 POST /api/teams/login
 {
@@ -29,10 +36,13 @@ POST /api/teams/login
   "password": "securePassword123"
 }
 ```
+
 Response includes JWT token for future requests.
 
 ### 2. Creating a Match Request
+
 **Team A wants to host a match:**
+
 ```http
 POST /api/matches
 {
@@ -40,53 +50,73 @@ POST /api/matches
   "location": "MIT Football Field"
 }
 ```
+
 Response includes `matchId` (e.g., `65c1234567890abcdef12345`)
 
 ### 3. Viewing Available Matches
+
 **Team B (Stanford Tigers) wants to find matches:**
+
 ```http
 GET /api/matches
 ```
+
 No authentication needed. Shows all open matches.
 
 ### 4. Sending an Invite
+
 **Team B wants to join Team A's match:**
+
 ```http
 POST /api/invites/65c1234567890abcdef12345
 ```
+
 Uses the `matchId` from step 2. Response includes `inviteId` (e.g., `67f1a001ff16ef6c330b1bb0`)
 
 ### 5. Managing Invites
+
 **Team A wants to see invites for their match:**
+
 ```http
 GET /api/invites/match/65c1234567890abcdef12345
 ```
+
 Uses the `matchId`. Only Team A can view these invites.
 
 **Team B wants to see invites they've sent:**
+
 ```http
 GET /api/invites/sent
 ```
+
 Shows all invites sent by Team B.
 
 **Team B wants to see invites they've received:**
+
 ```http
 GET /api/invites/received
 ```
+
 Shows all invites received by Team B.
 
 ### 6. Accepting an Invite
+
 **Team A wants to accept Team B's invite:**
+
 ```http
 PUT /api/invites/67f1a001ff16ef6c330b1bb0/accept
 ```
+
 Uses the `inviteId` from step 4.
 
 ### 7. Viewing Personal Matches
+
 **Team A wants to see their matches:**
+
 ```http
 GET /api/matches/my-matches
 ```
+
 Shows all matches where Team A is either creator or participant.
 
 ## ID Types and Their Uses
@@ -185,4 +215,4 @@ sequenceDiagram
     TeamA->>API: Accept Invite
     API->>DB: Update Status
     API-->>TeamA: Confirm Acceptance
-``` 
+```

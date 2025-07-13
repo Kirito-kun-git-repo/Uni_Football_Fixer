@@ -5,9 +5,9 @@ const Team = require('./models/team.model');
 const setupSocket = (server) => {
   const io = new Server(server, {
     cors: {
-      origin: "*", // Allow all origins for development
-      methods: ["GET", "POST"]
-    }
+      origin: '*', // Allow all origins for development
+      methods: ['GET', 'POST'],
+    },
   });
 
   // Socket.IO authentication middleware
@@ -20,7 +20,7 @@ const setupSocket = (server) => {
 
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       const team = await Team.findById(decoded.id);
-      
+
       if (!team) {
         return next(new Error('Authentication error: Team not found'));
       }
@@ -55,7 +55,7 @@ const setupSocket = (server) => {
         const message = new Chat({
           matchId,
           senderTeam: socket.team._id,
-          content
+          content,
         });
         await message.save();
 
@@ -68,9 +68,9 @@ const setupSocket = (server) => {
           content: message.content,
           senderTeam: {
             teamName: message.senderTeam.teamName,
-            collegeName: message.senderTeam.collegeName
+            collegeName: message.senderTeam.collegeName,
           },
-          timestamp: message.timestamp
+          timestamp: message.timestamp,
         });
       } catch (error) {
         console.error('Error sending message:', error);
@@ -87,4 +87,4 @@ const setupSocket = (server) => {
   return io;
 };
 
-module.exports = setupSocket; 
+module.exports = setupSocket;

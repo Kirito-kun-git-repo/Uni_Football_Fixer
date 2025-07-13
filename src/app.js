@@ -1,61 +1,38 @@
-// Add this with your other route imports
+// app.js
+// Configures and exports the Express app (middleware, routes, etc.). Does NOT start the server or connect to the database.
 
-
-// Add this with your other app.use() calls
-app.use('/api/admin', adminRoutes);
 const express = require('express');
-const mongoose = require('mongoose');
 const passport = require('passport');
 const cors = require('cors');
-const http = require('http');
-const { setupSocket } = require('./socket/socket');
+const path = require('path');
 
 const app = express();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(passport.initialize());
 
-// Database connection
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch(err => console.error('MongoDB connection error:', err));
+// Serve static files
+app.use(express.static(path.join(__dirname, '../public')));
 
-// Routes
+// Import and use routes
 const teamRoutes = require('./routes/team.routes');
 const matchRoutes = require('./routes/match.routes');
 const inviteRoutes = require('./routes/invite.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const chatRoutes = require('./routes/chat.routes');
 const adminRoutes = require('./routes/admin.routes');
+const authRoutes = require('./routes/auth.routes');
 
-app.use('/api/teams', teamRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/teams', teamRoutes); // Only profile, update, and change-password endpoints remain. Registration and login are now only under /api/auth.
 app.use('/api/matches', matchRoutes);
 app.use('/api/invites', inviteRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/admin', adminRoutes);
 
-// Create HTTP server
-console.log('Creating HTTP server...');
-const server = http.createServer(app);
-
-// Setup Socket.IO
-console.log('Setting up Socket.IO...');
-const io = setupSocket(server);
-console.log('Socket.IO setup complete');
-
-// Make io accessible to routes
-app.set('io', io);
-
-// Add error handling for the server
-server.on('error', (error) => {
-  console.error('Server error:', error);
-});
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-  console.log('WebSocket server is ready at ws://localhost:' + PORT);
-}); 
+// Export the configured app
+module.exports = app;

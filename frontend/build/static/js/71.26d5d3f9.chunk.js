@@ -1,0 +1,2 @@
+"use strict";(self.webpackChunkfootball_fixer_frontend=self.webpackChunkfootball_fixer_frontend||[]).push([[71],{71:(e,l,o)=>{o.r(l),o.d(l,{default:()=>r});o(43);var n=o(729),i=o(579);const r=function(){const{user:e}=(0,n.A)();return(0,i.jsxs)("div",{children:[(0,i.jsx)("h1",{children:"Welcome to Football Fixer!"}),(0,i.jsxs)("p",{children:["Logged in as: ",(null===e||void 0===e?void 0:e.teamName)||(null===e||void 0===e?void 0:e.email)]})]})}}}]);
+//# sourceMappingURL=71.26d5d3f9.chunk.js.map

@@ -4,7 +4,7 @@ const Team = require('../models/team.model');
 
 const options = {
   jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-  secretOrKey: process.env.JWT_SECRET
+  secretOrKey: process.env.JWT_SECRET,
 };
 
 exports.initializePassport = (passport) => {
@@ -21,4 +21,4 @@ exports.initializePassport = (passport) => {
       }
     })
   );
-}; 
+};
