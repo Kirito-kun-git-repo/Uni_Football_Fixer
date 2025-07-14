@@ -1,25 +1,21 @@
 import React, { useState } from 'react';
-import adminService from '../api/adminService';
-import { useNavigate } from 'react-router-dom';
+import adminService from '../../api/adminService';
 
-function AdminLoginPage() {
+const AdminLogin = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
+  const [error, setError] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
     setLoading(true);
+    setError('');
     try {
-      const res = await adminService.login({ email, password });
-      sessionStorage.setItem('jwt', res.token);
-      sessionStorage.setItem('user', JSON.stringify({ ...res.admin, role: 'admin' }));
-      navigate('/admin/dashboard');
+      const result = await adminService.login({ email, password });
+      if (onLogin) onLogin(result);
     } catch (err) {
-      setError(err.response?.data?.message || 'Admin login failed');
+      setError(err.response?.data?.message || 'Login failed');
     } finally {
       setLoading(false);
     }
@@ -60,6 +56,6 @@ function AdminLoginPage() {
       </form>
     </div>
   );
-}
+};
 
-export default AdminLoginPage;
+export default AdminLogin;

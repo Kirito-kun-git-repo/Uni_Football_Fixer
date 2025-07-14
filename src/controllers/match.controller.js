@@ -78,6 +78,34 @@ exports.updateMatch = async (req, res) => {
     ).populate('createdBy', 'teamName collegeName');
     if (!updatedMatch) return res.status(404).json({ message: 'Match not found' });
 
+    // Find all accepted invites for this match (to get the other involved team)
+    const acceptedInvite = await require('../models/matchInvite.model').findOne({
+      matchRequest: updatedMatch._id,
+      status: 'accepted',
+    });
+
+    const Notification = require('../models/notification.model');
+    // Notify match creator
+    await Notification.create({
+      teamId: updatedMatch.createdBy._id,
+      message: 'Match updated/cancelled',
+      type: 'match-update',
+      relatedMatch: updatedMatch._id,
+      read: false,
+      createdAt: new Date(),
+    });
+    // Notify accepted invite team if exists and not the same as creator
+    if (acceptedInvite && acceptedInvite.senderTeam.toString() !== updatedMatch.createdBy._id.toString()) {
+      await Notification.create({
+        teamId: acceptedInvite.senderTeam,
+        message: 'Match updated/cancelled',
+        type: 'match-update',
+        relatedMatch: updatedMatch._id,
+        read: false,
+        createdAt: new Date(),
+      });
+    }
+
     res.json({
       message: 'Match updated successfully',
       match: {

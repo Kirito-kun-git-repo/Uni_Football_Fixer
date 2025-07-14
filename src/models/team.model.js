@@ -24,7 +24,7 @@ const teamSchema = new mongoose.Schema({
     required: true,
   },
   profilePicture: {
-    // Optional field to store the URL or path to the team's profile picture.
+    // Stores the filename or relative path to the team's profile picture (not base64).
     type: String,
     required: false,
     trim: true,

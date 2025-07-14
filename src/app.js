@@ -4,9 +4,12 @@
 const express = require('express');
 const passport = require('passport');
 const cors = require('cors');
-const path = require('path');
+// const path = require('path');
 
 const app = express();
+const path = require('path');
+// Serve uploads directory for profile pictures
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Middleware
 app.use(cors());
@@ -33,6 +36,8 @@ app.use('/api/invites', inviteRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/admin/auth', require('./routes/admin.auth.routes'));
+
 
 // Export the configured app
 module.exports = app;

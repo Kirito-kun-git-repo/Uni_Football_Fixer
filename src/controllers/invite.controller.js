@@ -54,6 +54,18 @@ exports.createInvite = async (req, res) => {
       .populate('senderTeam', 'teamName collegeName')
       .populate('receiverTeam', 'teamName collegeName')
       .populate('matchRequest');
+
+    // Create notification for receiver team
+    await Notification.create({
+      teamId: receiverTeamId,
+      message: `You have received a match invite from ${req.team.teamName}`,
+      type: 'invite',
+      relatedMatch: matchId,
+      relatedInvite: savedInvite._id,
+      read: false,
+      createdAt: new Date(),
+    });
+
     // Send email notification (optional, handle errors inside util)
     sendMatchInviteEmail(receiverTeam.email, populatedInvite.matchRequest, populatedInvite.senderTeam);
     res.status(201).json(populatedInvite);
@@ -120,6 +132,17 @@ exports.acceptInvite = async (req, res) => {
       // Send to both teams
       sendMatchSettledEmail(senderTeam.email, matchDetails, senderTeam, receiverTeam);
       sendMatchSettledEmail(receiverTeam.email, matchDetails, senderTeam, receiverTeam);
+
+      // Create notification for sender team (invite creator)
+      await Notification.create({
+        teamId: senderTeam._id,
+        message: `${receiverTeam.teamName} accepted your match invite!`,
+        type: 'invite-accepted',
+        relatedMatch: invite.matchRequest,
+        relatedInvite: invite._id,
+        read: false,
+        createdAt: new Date(),
+      });
     }
     res.status(200).json({ message: 'Invite accepted', invite });
   } catch (err) {

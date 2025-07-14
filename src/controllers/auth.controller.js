@@ -6,7 +6,7 @@ const Team = require('../models/team.model');
 exports.registerTeam = async (req, res) => {
   try {
     const { teamName, collegeName, email, password } = req.body;
-    let profilePictureBase64 = null;
+    let profilePicturePath = req.file ? req.file.filename : null;
 
     // Validate required fields
     if (!teamName || !collegeName || !email || !password) {
@@ -23,10 +23,7 @@ exports.registerTeam = async (req, res) => {
       });
     }
 
-    // Handle image buffer, convert to base64
-    if (req.file) {
-      profilePictureBase64 = req.file.buffer.toString('base64');
-    }
+    // No base64 conversion needed. Profile picture is handled by multer disk storage.
 
     // Check if team name or email already exists
     const existingTeam = await Team.findOne({ $or: [{ teamName }, { email }] });
@@ -49,7 +46,7 @@ exports.registerTeam = async (req, res) => {
       collegeName,
       email,
       password: hashedPassword,
-      profilePicture: profilePictureBase64,
+      profilePicture: profilePicturePath,
     });
 
     // Save the team
@@ -66,7 +63,7 @@ exports.registerTeam = async (req, res) => {
         teamName: savedTeam.teamName,
         collegeName: savedTeam.collegeName,
         email: savedTeam.email,
-        profilePicture: savedTeam.profilePicture,
+        profilePicture: savedTeam.profilePicture ? `/uploads/profile_pictures/${savedTeam.profilePicture}` : null,
       },
       token,
     });
