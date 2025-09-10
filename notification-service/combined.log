@@ -1,0 +1,138 @@
+{"level":"info","message":"sensitive route applied","service":"notification-service","timestamp":"2025-09-09T12:03:53.075Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T12:03:53.079Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T12:03:53.125Z"}
+{"level":"info","message":"Connected to MongoDB","service":"notification-service","timestamp":"2025-09-09T12:03:53.143Z"}
+{"level":"info","message":"Connected to RabbitMQ","service":"notification-service","timestamp":"2025-09-09T12:03:53.151Z"}
+{"level":"info","message":"RabbitMQ connection established successfully","service":"notification-service","timestamp":"2025-09-09T12:03:53.151Z"}
+{"level":"info","message":"Subscribed to events with routing key: notification","service":"notification-service","timestamp":"2025-09-09T12:03:53.189Z"}
+{"level":"info","message":"Server is running on port 3005","service":"notification-service","timestamp":"2025-09-09T12:03:53.191Z"}
+{"level":"info","message":"Event consumed with routing key: notification","service":"notification-service","timestamp":"2025-09-09T12:07:09.900Z"}
+{"0":"r","1":"e","2":"a","3":"s","4":"o","5":"n","6":":","level":"error","message":"Unhandled Rejection:","service":"notification-service","timestamp":"2025-09-09T12:07:09.905Z"}
+{"level":"info","message":"sensitive route applied","service":"notification-service","timestamp":"2025-09-09T12:08:56.327Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T12:08:56.331Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T12:08:56.355Z"}
+{"level":"info","message":"Connected to MongoDB","service":"notification-service","timestamp":"2025-09-09T12:08:56.372Z"}
+{"level":"info","message":"Connected to RabbitMQ","service":"notification-service","timestamp":"2025-09-09T12:08:56.412Z"}
+{"level":"info","message":"RabbitMQ connection established successfully","service":"notification-service","timestamp":"2025-09-09T12:08:56.413Z"}
+{"level":"info","message":"Subscribed to events with routing key: notification","service":"notification-service","timestamp":"2025-09-09T12:08:56.422Z"}
+{"level":"info","message":"Server is running on port 3005","service":"notification-service","timestamp":"2025-09-09T12:08:56.425Z"}
+{"level":"info","message":"Event consumed with routing key: notification","service":"notification-service","timestamp":"2025-09-09T12:13:43.680Z"}
+{"0":"r","1":"e","2":"a","3":"s","4":"o","5":"n","6":":","level":"error","message":"Unhandled Rejection:","service":"notification-service","timestamp":"2025-09-09T12:13:43.682Z"}
+{"level":"info","message":"sensitive route applied","service":"notification-service","timestamp":"2025-09-09T16:34:13.953Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T16:34:13.956Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T16:34:13.974Z"}
+{"level":"info","message":"Connected to MongoDB","service":"notification-service","timestamp":"2025-09-09T16:34:13.990Z"}
+{"level":"info","message":"Connected to RabbitMQ","service":"notification-service","timestamp":"2025-09-09T16:34:14.025Z"}
+{"level":"info","message":"RabbitMQ connection established successfully","service":"notification-service","timestamp":"2025-09-09T16:34:14.025Z"}
+{"level":"info","message":"Subscribed to events with routing key: notification","service":"notification-service","timestamp":"2025-09-09T16:34:14.038Z"}
+{"level":"info","message":"Server is running on port 3005","service":"notification-service","timestamp":"2025-09-09T16:34:14.040Z"}
+{"level":"info","message":"sensitive route applied","service":"notification-service","timestamp":"2025-09-09T16:38:28.004Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T16:38:28.007Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T16:38:28.027Z"}
+{"level":"info","message":"Connected to MongoDB","service":"notification-service","timestamp":"2025-09-09T16:38:28.037Z"}
+{"level":"info","message":"Connected to RabbitMQ","service":"notification-service","timestamp":"2025-09-09T16:38:28.056Z"}
+{"level":"info","message":"RabbitMQ connection established successfully","service":"notification-service","timestamp":"2025-09-09T16:38:28.057Z"}
+{"level":"info","message":"Subscribed to events with routing key: notification","service":"notification-service","timestamp":"2025-09-09T16:38:28.089Z"}
+{"level":"info","message":"Server is running on port 3005","service":"notification-service","timestamp":"2025-09-09T16:38:28.092Z"}
+{"level":"info","message":"Event consumed with routing key: notification","service":"notification-service","timestamp":"2025-09-09T16:39:25.821Z"}
+{"0":"r","1":"e","2":"a","3":"s","4":"o","5":"n","6":":","level":"error","message":"Unhandled Rejection:","service":"notification-service","timestamp":"2025-09-09T16:39:25.822Z"}
+{"level":"info","message":"sensitive route applied","service":"notification-service","timestamp":"2025-09-09T16:40:30.432Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T16:40:30.435Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T16:40:30.454Z"}
+{"level":"info","message":"Connected to MongoDB","service":"notification-service","timestamp":"2025-09-09T16:40:30.475Z"}
+{"level":"info","message":"Connected to RabbitMQ","service":"notification-service","timestamp":"2025-09-09T16:40:30.483Z"}
+{"level":"info","message":"RabbitMQ connection established successfully","service":"notification-service","timestamp":"2025-09-09T16:40:30.484Z"}
+{"level":"info","message":"Subscribed to events with routing key: notification","service":"notification-service","timestamp":"2025-09-09T16:40:30.519Z"}
+{"level":"info","message":"Server is running on port 3005","service":"notification-service","timestamp":"2025-09-09T16:40:30.521Z"}
+{"error":"Cannot read properties of undefined (reading 'toString')","level":"error","message":"Error handling notification event:","service":"notification-service","stack":"TypeError: Cannot read properties of undefined (reading 'toString')\n    at C:\\Users\\hp\\Desktop\\Football-fixer-reimagined\\Uni_Football_Fixer\\notification-service\\src\\server.js:201:42\n    at C:\\Users\\hp\\Desktop\\Football-fixer-reimagined\\Uni_Football_Fixer\\notification-service\\src\\utils\\rabbitmq.js:42:13\n    at Channel.dispatchMessage (C:\\Users\\hp\\Desktop\\Football-fixer-reimagined\\Uni_Football_Fixer\\notification-service\\node_modules\\amqplib\\lib\\channel.js:489:14)\n    at Channel.handleDelivery (C:\\Users\\hp\\Desktop\\Football-fixer-reimagined\\Uni_Football_Fixer\\notification-service\\node_modules\\amqplib\\lib\\channel.js:498:17)\n    at Channel.emit (node:events:518:28)\n    at C:\\Users\\hp\\Desktop\\Football-fixer-reimagined\\Uni_Football_Fixer\\notification-service\\node_modules\\amqplib\\lib\\channel.js:395:10\n    at Channel.content [as handleMessage] (C:\\Users\\hp\\Desktop\\Football-fixer-reimagined\\Uni_Football_Fixer\\notification-service\\node_modules\\amqplib\\lib\\channel.js:448:9)\n    at Channel.acceptMessageFrame (C:\\Users\\hp\\Desktop\\Football-fixer-reimagined\\Uni_Football_Fixer\\notification-service\\node_modules\\amqplib\\lib\\channel.js:232:33)\n    at Channel.accept (C:\\Users\\hp\\Desktop\\Football-fixer-reimagined\\Uni_Football_Fixer\\notification-service\\node_modules\\amqplib\\lib\\channel.js:302:19)\n    at Connection.mainAccept [as accept] (C:\\Users\\hp\\Desktop\\Football-fixer-reimagined\\Uni_Football_Fixer\\notification-service\\node_modules\\amqplib\\lib\\connection.js:579:33)","timestamp":"2025-09-09T16:41:10.240Z"}
+{"level":"info","message":"Event consumed with routing key: notification","service":"notification-service","timestamp":"2025-09-09T16:41:10.242Z"}
+{"level":"info","message":"sensitive route applied","service":"notification-service","timestamp":"2025-09-09T16:42:37.312Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T16:42:37.316Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T16:42:37.335Z"}
+{"level":"info","message":"Connected to MongoDB","service":"notification-service","timestamp":"2025-09-09T16:42:37.349Z"}
+{"level":"info","message":"Connected to RabbitMQ","service":"notification-service","timestamp":"2025-09-09T16:42:37.356Z"}
+{"level":"info","message":"RabbitMQ connection established successfully","service":"notification-service","timestamp":"2025-09-09T16:42:37.357Z"}
+{"level":"info","message":"Subscribed to events with routing key: notification","service":"notification-service","timestamp":"2025-09-09T16:42:37.367Z"}
+{"level":"info","message":"Server is running on port 3005","service":"notification-service","timestamp":"2025-09-09T16:42:37.369Z"}
+{"error":"\"[object Object]\" is not valid JSON","level":"error","message":"Error handling notification event:","service":"notification-service","stack":"SyntaxError: \"[object Object]\" is not valid JSON\n    at JSON.parse (<anonymous>)\n    at C:\\Users\\hp\\Desktop\\Football-fixer-reimagined\\Uni_Football_Fixer\\notification-service\\src\\server.js:201:24\n    at C:\\Users\\hp\\Desktop\\Football-fixer-reimagined\\Uni_Football_Fixer\\notification-service\\src\\utils\\rabbitmq.js:42:13\n    at Channel.dispatchMessage (C:\\Users\\hp\\Desktop\\Football-fixer-reimagined\\Uni_Football_Fixer\\notification-service\\node_modules\\amqplib\\lib\\channel.js:489:14)\n    at Channel.handleDelivery (C:\\Users\\hp\\Desktop\\Football-fixer-reimagined\\Uni_Football_Fixer\\notification-service\\node_modules\\amqplib\\lib\\channel.js:498:17)\n    at Channel.emit (node:events:518:28)\n    at C:\\Users\\hp\\Desktop\\Football-fixer-reimagined\\Uni_Football_Fixer\\notification-service\\node_modules\\amqplib\\lib\\channel.js:395:10\n    at Channel.content [as handleMessage] (C:\\Users\\hp\\Desktop\\Football-fixer-reimagined\\Uni_Football_Fixer\\notification-service\\node_modules\\amqplib\\lib\\channel.js:448:9)\n    at Channel.acceptMessageFrame (C:\\Users\\hp\\Desktop\\Football-fixer-reimagined\\Uni_Football_Fixer\\notification-service\\node_modules\\amqplib\\lib\\channel.js:232:33)\n    at Channel.accept (C:\\Users\\hp\\Desktop\\Football-fixer-reimagined\\Uni_Football_Fixer\\notification-service\\node_modules\\amqplib\\lib\\channel.js:302:19)","timestamp":"2025-09-09T16:43:09.849Z"}
+{"level":"info","message":"Event consumed with routing key: notification","service":"notification-service","timestamp":"2025-09-09T16:43:09.851Z"}
+{"level":"info","message":"sensitive route applied","service":"notification-service","timestamp":"2025-09-09T16:43:43.952Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T16:43:43.955Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T16:43:43.977Z"}
+{"level":"info","message":"Connected to MongoDB","service":"notification-service","timestamp":"2025-09-09T16:43:43.994Z"}
+{"level":"info","message":"Connected to RabbitMQ","service":"notification-service","timestamp":"2025-09-09T16:43:44.034Z"}
+{"level":"info","message":"RabbitMQ connection established successfully","service":"notification-service","timestamp":"2025-09-09T16:43:44.034Z"}
+{"level":"info","message":"Subscribed to events with routing key: notification","service":"notification-service","timestamp":"2025-09-09T16:43:44.045Z"}
+{"level":"info","message":"Server is running on port 3005","service":"notification-service","timestamp":"2025-09-09T16:43:44.048Z"}
+{"acceptedTeam":{"collegeName":"IIIT black","email":"22121@iiitu.ac.in","teamId":"68bf49d3bac1c7c8fb4986c3","teamName":"black Warriors"},"hostTeam":{"collegeName":"IIIT Una","email":"chamanrathorepcm587@gmail.com","teamId":"68bd73a4cf274ec5168c6258","teamName":"Red Warriors"},"inviteId":"68bf49f3bf500df5bc27faf0","level":"warn","matchId":"68bd817ebbf590e19703f47f","message":"Received empty or invalid message:","purpose":"match.fixed","rejectedTeams":[{"collegeName":"IIIT Chuna","email":"chaman.rathore.tech@gmail.com","teamId":"68bd8215fa4c823c746869d3","teamName":"Pink Warriors"}],"service":"notification-service","timestamp":"2025-09-09T16:44:16.089Z"}
+{"level":"info","message":"Event consumed with routing key: notification","service":"notification-service","timestamp":"2025-09-09T16:44:16.091Z"}
+{"level":"info","message":"sensitive route applied","service":"notification-service","timestamp":"2025-09-09T16:45:59.396Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T16:45:59.399Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T16:45:59.416Z"}
+{"level":"info","message":"Connected to MongoDB","service":"notification-service","timestamp":"2025-09-09T16:45:59.430Z"}
+{"level":"info","message":"Connected to RabbitMQ","service":"notification-service","timestamp":"2025-09-09T16:45:59.463Z"}
+{"level":"info","message":"RabbitMQ connection established successfully","service":"notification-service","timestamp":"2025-09-09T16:45:59.464Z"}
+{"level":"info","message":"Subscribed to events with routing key: notification","service":"notification-service","timestamp":"2025-09-09T16:45:59.476Z"}
+{"level":"info","message":"Server is running on port 3005","service":"notification-service","timestamp":"2025-09-09T16:45:59.478Z"}
+{"acceptedTeam":{"collegeName":"IIIT black","email":"22121@iiitu.ac.in","teamId":"68bf49d3bac1c7c8fb4986c3","teamName":"black Warriors"},"hostTeam":{"collegeName":"IIIT Una","email":"chamanrathorepcm587@gmail.com","teamId":"68bd73a4cf274ec5168c6258","teamName":"Red Warriors"},"inviteId":"68bf49f3bf500df5bc27faf0","level":"info","matchId":"68bd817ebbf590e19703f47f","message":"Received event:","purpose":"match.fixed","rejectedTeams":[{"collegeName":"IIIT Chuna","email":"chaman.rathore.tech@gmail.com","teamId":"68bd8215fa4c823c746869d3","teamName":"Pink Warriors"}],"service":"notification-service","timestamp":"2025-09-09T16:46:28.347Z"}
+{"level":"info","message":"Sending fixed match emails","service":"notification-service","timestamp":"2025-09-09T16:46:28.350Z"}
+{"level":"info","message":"Event consumed with routing key: notification","service":"notification-service","timestamp":"2025-09-09T16:46:28.369Z"}
+{"level":"info","message":"sensitive route applied","service":"notification-service","timestamp":"2025-09-09T19:00:09.799Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T19:00:09.801Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T19:00:09.822Z"}
+{"level":"info","message":"Connected to MongoDB","service":"notification-service","timestamp":"2025-09-09T19:00:09.835Z"}
+{"level":"info","message":"Connected to RabbitMQ","service":"notification-service","timestamp":"2025-09-09T19:00:09.847Z"}
+{"level":"info","message":"RabbitMQ connection established successfully","service":"notification-service","timestamp":"2025-09-09T19:00:09.848Z"}
+{"level":"info","message":"Subscribed to events with routing key: notification","service":"notification-service","timestamp":"2025-09-09T19:00:09.893Z"}
+{"level":"info","message":"Server is running on port 3005","service":"notification-service","timestamp":"2025-09-09T19:00:09.895Z"}
+{"level":"info","message":"sensitive route applied","service":"notification-service","timestamp":"2025-09-09T19:22:17.035Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T19:22:17.038Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T19:22:17.057Z"}
+{"level":"info","message":"Connected to MongoDB","service":"notification-service","timestamp":"2025-09-09T19:22:17.071Z"}
+{"level":"info","message":"Connected to RabbitMQ","service":"notification-service","timestamp":"2025-09-09T19:22:17.079Z"}
+{"level":"info","message":"RabbitMQ connection established successfully","service":"notification-service","timestamp":"2025-09-09T19:22:17.080Z"}
+{"level":"info","message":"Subscribed to events with routing key: notification","service":"notification-service","timestamp":"2025-09-09T19:22:17.122Z"}
+{"level":"info","message":"Server is running on port 3005","service":"notification-service","timestamp":"2025-09-09T19:22:17.125Z"}
+{"acceptedTeam":{"collegeName":"IIIT black","email":"22121@iiitu.ac.in","teamId":"68bf49d3bac1c7c8fb4986c3","teamName":"black Warriors"},"hostTeam":{"collegeName":"IIIT Una","email":"chamanrathorepcm587@gmail.com","teamId":"68bd73a4cf274ec5168c6258","teamName":"Red Warriors"},"inviteId":"68bf49f3bf500df5bc27faf0","level":"info","matchId":"68bd817ebbf590e19703f47f","message":"Received event:","purpose":"match.fixed","rejectedTeams":[{"collegeName":"IIIT Chuna","email":"chaman.rathore.tech@gmail.com","teamId":"68bd8215fa4c823c746869d3","teamName":"Pink Warriors"}],"service":"notification-service","timestamp":"2025-09-09T19:39:22.686Z"}
+{"level":"info","message":"Sending fixed match emails","service":"notification-service","timestamp":"2025-09-09T19:39:22.687Z"}
+{"level":"info","message":"Event consumed with routing key: notification","service":"notification-service","timestamp":"2025-09-09T19:39:22.691Z"}
+{"level":"info","message":"sensitive route applied","service":"notification-service","timestamp":"2025-09-09T19:44:27.941Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T19:44:27.944Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T19:44:27.966Z"}
+{"level":"info","message":"Connected to MongoDB","service":"notification-service","timestamp":"2025-09-09T19:44:27.984Z"}
+{"level":"info","message":"Connected to RabbitMQ","service":"notification-service","timestamp":"2025-09-09T19:44:27.995Z"}
+{"level":"info","message":"RabbitMQ connection established successfully","service":"notification-service","timestamp":"2025-09-09T19:44:27.996Z"}
+{"level":"info","message":"Subscribed to events with routing key: notification","service":"notification-service","timestamp":"2025-09-09T19:44:28.034Z"}
+{"level":"info","message":"Server is running on port 3005","service":"notification-service","timestamp":"2025-09-09T19:44:28.036Z"}
+{"level":"info","message":"sensitive route applied","service":"notification-service","timestamp":"2025-09-09T19:45:00.514Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T19:45:00.519Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T19:45:00.544Z"}
+{"level":"info","message":"Connected to MongoDB","service":"notification-service","timestamp":"2025-09-09T19:45:00.567Z"}
+{"level":"info","message":"Connected to RabbitMQ","service":"notification-service","timestamp":"2025-09-09T19:45:00.603Z"}
+{"level":"info","message":"RabbitMQ connection established successfully","service":"notification-service","timestamp":"2025-09-09T19:45:00.603Z"}
+{"level":"info","message":"Subscribed to events with routing key: notification","service":"notification-service","timestamp":"2025-09-09T19:45:00.614Z"}
+{"level":"info","message":"Server is running on port 3005","service":"notification-service","timestamp":"2025-09-09T19:45:00.617Z"}
+{"acceptedTeam":{"collegeName":"IIIT black","email":"22121@iiitu.ac.in","teamId":"68bf49d3bac1c7c8fb4986c3","teamName":"black Warriors"},"hostTeam":{"collegeName":"IIIT Una","email":"chamanrathorepcm587@gmail.com","teamId":"68bd73a4cf274ec5168c6258","teamName":"Red Warriors"},"inviteId":"68bf49f3bf500df5bc27faf0","level":"info","matchId":"68bd817ebbf590e19703f47f","message":"Received event:","purpose":"match.fixed","rejectedTeams":[{"collegeName":"IIIT Chuna","email":"chaman.rathore.tech@gmail.com","teamId":"68bd8215fa4c823c746869d3","teamName":"Pink Warriors"}],"service":"notification-service","timestamp":"2025-09-09T19:46:24.064Z"}
+{"level":"info","message":"Sending fixed match emails","service":"notification-service","timestamp":"2025-09-09T19:46:24.066Z"}
+{"level":"info","message":"Event consumed with routing key: notification","service":"notification-service","timestamp":"2025-09-09T19:46:24.072Z"}
+{"level":"error","message":"Error in sending mail for fixed match Notification is not defined","service":"notification-service","stack":"ReferenceError: Notification is not defined\n    at Object.sendMail (C:\\Users\\hp\\Desktop\\Football-fixer-reimagined\\Uni_Football_Fixer\\notification-service\\src\\utils\\mailer.js:52:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.handleMatchFixed (C:\\Users\\hp\\Desktop\\Football-fixer-reimagined\\Uni_Football_Fixer\\notification-service\\src\\services\\notificationService.js:34:9)\n    at async C:\\Users\\hp\\Desktop\\Football-fixer-reimagined\\Uni_Football_Fixer\\notification-service\\src\\server.js:208:9","timestamp":"2025-09-09T19:46:26.948Z"}
+{"level":"info","message":"sensitive route applied","service":"notification-service","timestamp":"2025-09-09T19:48:40.908Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T19:48:40.911Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T19:48:40.930Z"}
+{"level":"info","message":"Connected to MongoDB","service":"notification-service","timestamp":"2025-09-09T19:48:40.946Z"}
+{"level":"info","message":"Connected to RabbitMQ","service":"notification-service","timestamp":"2025-09-09T19:48:40.959Z"}
+{"level":"info","message":"RabbitMQ connection established successfully","service":"notification-service","timestamp":"2025-09-09T19:48:40.959Z"}
+{"level":"info","message":"Subscribed to events with routing key: notification","service":"notification-service","timestamp":"2025-09-09T19:48:40.992Z"}
+{"level":"info","message":"Server is running on port 3005","service":"notification-service","timestamp":"2025-09-09T19:48:40.994Z"}
+{"acceptedTeam":{"collegeName":"IIIT black","email":"22121@iiitu.ac.in","teamId":"68bf49d3bac1c7c8fb4986c3","teamName":"black Warriors"},"hostTeam":{"collegeName":"IIIT Una","email":"chamanrathorepcm587@gmail.com","teamId":"68bd73a4cf274ec5168c6258","teamName":"Red Warriors"},"inviteId":"68bf49f3bf500df5bc27faf0","level":"info","matchId":"68bd817ebbf590e19703f47f","message":"Received event:","purpose":"match.fixed","rejectedTeams":[{"collegeName":"IIIT Chuna","email":"chaman.rathore.tech@gmail.com","teamId":"68bd8215fa4c823c746869d3","teamName":"Pink Warriors"}],"service":"notification-service","timestamp":"2025-09-09T19:51:36.700Z"}
+{"level":"info","message":"Sending fixed match emails","service":"notification-service","timestamp":"2025-09-09T19:51:36.702Z"}
+{"level":"info","message":"Event consumed with routing key: notification","service":"notification-service","timestamp":"2025-09-09T19:51:36.715Z"}
+{"_message":"Notification validation failed","errors":{"message":{"kind":"required","message":"Path `message` is required.","name":"ValidatorError","path":"message","properties":{"message":"Path `message` is required.","path":"message","type":"required","value":null},"value":null},"recipientTeamId":{"kind":"required","message":"Path `recipientTeamId` is required.","name":"ValidatorError","path":"recipientTeamId","properties":{"message":"Path `recipientTeamId` is required.","path":"recipientTeamId","type":"required"}},"type":{"kind":"required","message":"Path `type` is required.","name":"ValidatorError","path":"type","properties":{"message":"Path `type` is required.","path":"type","type":"required"}}},"level":"error","message":"Error in sending mail for fixed match Notification validation failed: type: Path `type` is required., recipientTeamId: Path `recipientTeamId` is required., message: Path `message` is required.","service":"notification-service","stack":"ValidationError: Notification validation failed: type: Path `type` is required., recipientTeamId: Path `recipientTeamId` is required., message: Path `message` is required.\n    at Document.invalidate (C:\\Users\\hp\\Desktop\\Football-fixer-reimagined\\Uni_Football_Fixer\\node_modules\\mongoose\\lib\\document.js:3351:32)\n    at C:\\Users\\hp\\Desktop\\Football-fixer-reimagined\\Uni_Football_Fixer\\node_modules\\mongoose\\lib\\document.js:3112:17\n    at C:\\Users\\hp\\Desktop\\Football-fixer-reimagined\\Uni_Football_Fixer\\node_modules\\mongoose\\lib\\schemaType.js:1407:9\n    at process.processTicksAndRejections (node:internal/process/task_queues:85:11)","timestamp":"2025-09-09T19:51:39.559Z"}
+{"level":"info","message":"sensitive route applied","service":"notification-service","timestamp":"2025-09-09T19:54:49.801Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T19:54:49.805Z"}
+{"level":"info","message":"Connected to Redis","service":"notification-service","timestamp":"2025-09-09T19:54:49.828Z"}
+{"level":"info","message":"Connected to MongoDB","service":"notification-service","timestamp":"2025-09-09T19:54:49.846Z"}
+{"level":"info","message":"Connected to RabbitMQ","service":"notification-service","timestamp":"2025-09-09T19:54:49.890Z"}
+{"level":"info","message":"RabbitMQ connection established successfully","service":"notification-service","timestamp":"2025-09-09T19:54:49.891Z"}
+{"level":"info","message":"Subscribed to events with routing key: notification","service":"notification-service","timestamp":"2025-09-09T19:54:49.901Z"}
+{"level":"info","message":"Server is running on port 3005","service":"notification-service","timestamp":"2025-09-09T19:54:49.904Z"}
