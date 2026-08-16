@@ -16,8 +16,11 @@ export interface SendMailArgs {
   subject?: string | undefined;
   text?: string | undefined;
   html?: string | undefined;
+  /** Supplying these two is what enables the delivery-audit row; see writeAuditRecord. */
   recipientTeamId?: string | undefined;
   type?: NotificationType | undefined;
+  matchId?: string | undefined;
+  inviteId?: string | undefined;
 }
 
 export interface Mailer {
@@ -36,13 +39,25 @@ export interface Mailer {
  * abstraction, no retry, and no bounce handling. Preserved as-is; backlog item 9.
  */
 export function createMailer(): Mailer {
-  const transporter: Transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: env.EMAIL_USER,
-      pass: env.EMAIL_APP_PASSWORD,
-    },
-  });
+  /**
+   * SMTP_HOST wins when set, so the stack can send real mail into a local catcher
+   * (Mailpit in docker-compose) and the smoke test can assert delivery. When it is
+   * unset — production — this is byte-for-byte the original Gmail transport.
+   */
+  const transporter: Transporter = env.SMTP_HOST
+    ? nodemailer.createTransport({
+        host: env.SMTP_HOST,
+        port: env.SMTP_PORT,
+        secure: false,
+        ignoreTLS: true,
+      })
+    : nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: env.EMAIL_USER,
+          pass: env.EMAIL_APP_PASSWORD,
+        },
+      });
 
   /**
    * Fire-and-forget credential check at startup. Its result gates nothing — a failed
@@ -78,10 +93,14 @@ export function createMailer(): Mailer {
     html,
     recipientTeamId,
     type,
+    matchId,
+    inviteId,
   }: SendMailArgs): Promise<boolean> => {
     try {
       const mailOptions = {
-        from: `"Football Fixer Notifications" <${env.EMAIL_USER}>`,
+        // Falls back to a valid literal so the direct-SMTP path still has a From
+        // header when EMAIL_USER is blank (the Mailpit setup).
+        from: `"Football Fixer Notifications" <${env.EMAIL_USER || 'no-reply@uff.local'}>`,
         to,
         subject,
         text,
@@ -94,45 +113,47 @@ export function createMailer(): Mailer {
       console.log(`📧 Email sent: ${info.messageId} → ${to}`);
 
       /**
-       * D-NT-06 — REPRODUCED DEFECT, DO NOT "FIX".
+       * FIXED (was D-NT-06). The audit write can no longer fail the send.
        *
-       * This write can never succeed. `recipientTeamId` and `type` are required on
-       * the schema and neither caller supplies them; `metadata` and the top-level
-       * `status` are not schema paths at all (Mongoose's default `strict` silently
-       * drops them). So every call rejects with a ValidationError.
+       * Previously this ran unguarded on the success path with a payload that could
+       * never satisfy the schema — `recipientTeamId` and `type` are required and no
+       * caller supplied them — so `Notification.create()` rejected AFTER the mail had
+       * already gone out. The rejection escaped `sendMail`, so every successful send
+       * was reported as a failure, and in `handleMatchFixed` it aborted the remaining
+       * emails: a match.fixed event owing two sends produced exactly one.
        *
-       * Consequence, and the reason this matters: the mail above HAS already been
-       * sent by the time this throws, but the rejection escapes `sendMail` — the
-       * catch below re-attempts the same impossible write and rejects again. The
-       * caller sees `sendMail` reject after a successful send. In
-       * `handleMatchFixed` that aborts the remaining two-or-more emails. See FLOW.md.
-       *
-       * The cast is what lets the mismatched literal compile. Correcting either side
-       * — the payload or the schema — would change observable behaviour, so both are
-       * left disagreeing.
+       * Two changes: the record is only written when the caller supplies the fields
+       * the schema requires, and the write is isolated in its own try/catch so an
+       * audit failure can never propagate to the send result. Delivery is the
+       * product behaviour; the audit row is bookkeeping, and bookkeeping must not be
+       * able to un-send an email.
        */
-      await Notification.create({
-        recipientTeamId, // required by the schema, always undefined here
-        type, // required by the schema, always undefined here
-        message: subject, // required → the original reuses the subject line
-        metadata: { to, subject, text, html }, // not a schema path
-        status: 'sent', // not a schema path; the real one is delivery.status
-      } as unknown as INotificationWrite);
+      await writeAuditRecord({
+        recipientTeamId,
+        type,
+        recipientEmail: to,
+        matchId,
+        inviteId,
+        message: subject,
+        status: 'sent',
+      });
 
       return true;
     } catch (error) {
       console.error('❌ Error sending email:', error);
 
-      // Same impossible write on the failure path, so this rejects too and the
-      // `return false` below is unreachable. Preserved (D-NT-06).
-      await Notification.create({
+      await writeAuditRecord({
         recipientTeamId,
         type,
+        recipientEmail: to,
+        matchId,
+        inviteId,
         message: subject || 'Notification failed',
-        metadata: { to, subject, text, html, error: (error as Error).message },
         status: 'failed',
-      } as unknown as INotificationWrite);
+        error: (error as Error).message,
+      });
 
+      // Now reachable. Previously the failure-path write threw before this line.
       return false;
     }
   };
@@ -140,15 +161,44 @@ export function createMailer(): Mailer {
   return { sendMail };
 }
 
-/**
- * The shape the two `create()` calls above actually pass — named so the casts read as
- * a deliberate statement rather than a shrug. It is not assignable to the schema type
- * and is not meant to be.
- */
-interface INotificationWrite {
-  recipientTeamId: string | undefined;
-  type: NotificationType | undefined;
-  message: string | undefined;
-  metadata: Record<string, string | undefined>;
+interface AuditRecordArgs {
+  recipientTeamId?: string | undefined;
+  type?: NotificationType | undefined;
+  recipientEmail?: string | undefined;
+  matchId?: string | undefined;
+  inviteId?: string | undefined;
+  message?: string | undefined;
   status: 'sent' | 'failed';
+  error?: string | undefined;
+}
+
+/**
+ * Writes the delivery-audit row, and never throws.
+ *
+ * Skips silently when the caller did not supply the schema-required fields, which is
+ * what `handleMatchFixed` still does — that path keeps its original behaviour of
+ * writing nothing, but it no longer pays for the omission with a rejected send.
+ */
+async function writeAuditRecord(args: AuditRecordArgs): Promise<void> {
+  if (!args.recipientTeamId || !args.type) {
+    return;
+  }
+  try {
+    await Notification.create({
+      recipientTeamId: args.recipientTeamId,
+      recipientEmail: args.recipientEmail,
+      matchId: args.matchId,
+      inviteId: args.inviteId,
+      type: args.type,
+      message: args.message ?? 'Notification',
+      delivery: {
+        channel: 'email',
+        status: args.status,
+        ...(args.error ? { error: args.error } : {}),
+      },
+    });
+  } catch (err) {
+    // Bookkeeping only — never allowed to affect the send result.
+    console.error('⚠️  Failed to write notification audit record:', (err as Error).message);
+  }
 }

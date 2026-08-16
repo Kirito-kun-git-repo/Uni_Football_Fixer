@@ -57,6 +57,25 @@ services:
     networks: [uff]
     restart: unless-stopped
 
+  # Local SMTP sink. Accepts every message and exposes them over HTTP, so the smoke
+  # test can assert an email was actually DELIVERED rather than merely attempted.
+  # Without this, notification-service's entire reason to exist is unverifiable on any
+  # machine that lacks a real Gmail app password. Not part of a production deployment.
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "127.0.0.1:8025:8025"   # web UI + API, localhost only
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [uff]
+    restart: unless-stopped
+
   identity-service:
     build:
       context: .
@@ -149,9 +168,14 @@ services:
       # not delivered mail, so the stack must come up without real credentials.
       EMAIL_USER: ${EMAIL_USER:-}
       EMAIL_APP_PASSWORD: ${EMAIL_APP_PASSWORD:-}
+      # Routes mail to the local catcher instead of Gmail. Unset this (and set real
+      # EMAIL_* values) to send genuine email; the Gmail transport is unchanged.
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
     depends_on:
       mongo: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      mailpit: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3005/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s

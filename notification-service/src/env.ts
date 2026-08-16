@@ -51,7 +51,26 @@ export const env = {
   RABBITMQ_URL: required('RABBITMQ_URL'),
   EMAIL_USER: optionalEmail('EMAIL_USER'),
   EMAIL_APP_PASSWORD: optionalEmail('EMAIL_APP_PASSWORD'),
+
+  /**
+   * Direct SMTP host, used INSTEAD of Gmail when set.
+   *
+   * This exists so outbound mail can be verified without real Gmail credentials:
+   * docker-compose points it at a Mailpit container, which accepts every message and
+   * exposes them over HTTP so the smoke test can assert that an email was actually
+   * delivered rather than merely attempted. Before this, notification-service's only
+   * reason to exist was unverifiable on any machine without a Google app password.
+   *
+   * Unset in production, where the Gmail transport is used unchanged.
+   */
+  SMTP_HOST: process.env['SMTP_HOST'] ?? '',
+  SMTP_PORT: Number(process.env['SMTP_PORT'] ?? 1025),
 } as const;
 
-/** True only when both SMTP credentials are present. Read by `createMailer()`. */
-export const emailConfigured: boolean = Boolean(env.EMAIL_USER && env.EMAIL_APP_PASSWORD);
+/**
+ * True when the service has SOME way to send mail — either a direct SMTP host or a
+ * complete Gmail credential pair. Read by `createMailer()` to decide whether to warn.
+ */
+export const emailConfigured: boolean = Boolean(
+  env.SMTP_HOST || (env.EMAIL_USER && env.EMAIL_APP_PASSWORD),
+);

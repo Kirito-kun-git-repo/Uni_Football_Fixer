@@ -166,17 +166,21 @@ export function createInviteController(logger: Logger) {
           // types it as a required string; the cast keeps the runtime value identical
           // without widening the contract. Reported, not patched.
           createdAt: (newInvite as unknown as { createdAt?: string }).createdAt as string,
-          // purpose:'invite',
+          // FIXED — this was commented out, and that was the live defect.
+          // notification-service switches on `event.purpose`, so without it every
+          // invite fell through to its `default:` branch and no email was ever sent
+          // along this path.
+          purpose: 'invite',
           correlationId: newInvite._id.toString(), // handy for tracing
         };
 
         // Publish event (let rabbit util stringify object)
         //
-        // NOTE the commented-out `purpose` above. notification-service switches on
-        // `event.purpose`, so this payload falls through to its `default:` branch and
-        // NO invite email is ever sent along this path — only along the asynchronous
-        // fallback below, which does set it. That is the live defect (issue 3), and
-        // preserving it is the point: it stays commented out.
+        // Order note, because it is load-bearing: notification-service's `handleInvite`
+        // was fixed to read `{sender, receiver}` BEFORE this line was uncommented.
+        // Uncommenting first would have made a previously-unreachable path reachable
+        // and crashed it on `hostTeam.email` for every invite — turning a silent
+        // no-op into a downstream error. Consumer first, then reachability.
         await publishEvent('notification', eventPayload);
         logger.info('Published Event: notification for match invite creation', eventPayload);
       } catch (err) {

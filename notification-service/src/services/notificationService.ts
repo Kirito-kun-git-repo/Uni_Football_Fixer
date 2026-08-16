@@ -44,22 +44,67 @@ export function createNotificationService(logger: Logger, mailer: Mailer): Notif
    * `purpose` field at all, so most invites never even reach this function — they
    * fall through the dispatch switch to `default`. See FLOW.md.
    */
+  /**
+   * FIXED — this handler now reads what `createInvite` actually publishes.
+   *
+   * It previously destructured `{ hostTeam, acceptedTeam }` from a payload carrying
+   * `{ sender, receiver }`, so both were undefined and the send threw on every
+   * invite. That was half of the "invite emails never arrive" defect; the other half
+   * was `createInvite` publishing without `purpose`, so this handler was never even
+   * reached. Both halves are fixed, and the ORDER mattered: making the path reachable
+   * first would have converted a silent no-op into a crash on every invite.
+   *
+   * Role mapping, from the template's own wording ("Hello <host>, <challenger> is
+   * interested in playing against you"):
+   *   receiver -> the team hosting the match, and the recipient of this email
+   *   sender   -> the challenging team, named in the body
+   */
   const handleInvite = async (event: InviteNotification): Promise<void> => {
     try {
-      // The cast is the divergence made explicit: these keys are not on the contract.
-      const { hostTeam, acceptedTeam } = event as unknown as InviteEventAsRead;
-      logger.info('Sending invite email to host and accepted team ', hostTeam, acceptedTeam);
+      const { sender, receiver, matchId, inviteId } = event;
+      const hostTeam = receiver;
+      const challengerTeam = sender;
 
-      const subject = 'New Match Invite!';
-      // Non-null assertions reproduce the original unguarded reads. Both are in fact
-      // always undefined, so this line throws. Backlog item 2 — adding a guard here
-      // would change behaviour from "throws and logs" to "silently does nothing".
-      const body = inviteTemplate(hostTeam!, acceptedTeam!);
+      logger.info('Sending invite email to host team', {
+        inviteId,
+        matchId,
+        to: hostTeam?.email,
+      });
+
+      /**
+       * Enrichment is best-effort upstream: match-service's axios lookups can time
+       * out or be rate-limited, in which case only `teamId` survives. Without an
+       * address there is nothing to send, so skip loudly rather than throw — the
+       * throw is what used to bury this whole path in a caught error.
+       */
+      if (!hostTeam?.email) {
+        logger.warn(
+          'Invite notification carried no host email — upstream enrichment failed; no email sent',
+          { inviteId, matchId, hostTeamId: hostTeam?.teamId },
+        );
+        return;
+      }
+
+      const body = inviteTemplate(
+        {
+          teamName: hostTeam.teamName ?? 'there',
+          collegeName: hostTeam.collegeName ?? '',
+        },
+        {
+          teamName: challengerTeam?.teamName ?? 'Another team',
+          collegeName: challengerTeam?.collegeName ?? 'unknown college',
+        },
+      );
 
       await mailer.sendMail({
-        to: hostTeam!.email,
-        subject,
+        to: hostTeam.email,
+        subject: 'New Match Invite!',
         html: body,
+        // Supplying these is what lets the delivery-audit row be written.
+        recipientTeamId: hostTeam.teamId,
+        type: 'invite.sent',
+        matchId,
+        inviteId,
       });
     } catch (err) {
       logger.error('Error in sending mail for invite', err);

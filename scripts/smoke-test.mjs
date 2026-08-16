@@ -13,6 +13,7 @@
  */
 
 const GW = process.env.GATEWAY_URL ?? 'http://localhost:3000';
+const MAILPIT = process.env.MAILPIT_URL ?? 'http://localhost:8025';
 const stamp = Date.now();
 
 let failures = 0;
@@ -152,6 +153,35 @@ const invite = await api(`/v1/match/send-invite/${matchId}`, {
 check('invite created (201)', invite.status === 201, `got ${invite.status} ${JSON.stringify(invite.json).slice(0, 200)}`);
 const inviteId = invite.json?._id;
 check('invite id returned', Boolean(inviteId));
+
+console.log('\n--- 7b. CROSSES RABBITMQ + SMTP: the invite email is actually delivered ---');
+// The whole chain: match-service publishes `notification` with purpose:'invite' ->
+// notification-service consumes it, reads {sender, receiver}, renders the template ->
+// SMTP -> Mailpit. Asserting on Mailpit rather than on a log line is the difference
+// between "we attempted to send" and "an email exists".
+await poll('invite email delivered to the HOST team', async () => {
+  const res = await fetch(`${MAILPIT}/api/v1/search?query=${encodeURIComponent(host.email)}`);
+  if (!res.ok) return false;
+  const { messages = [] } = await res.json();
+  return messages.some(
+    (m) => m.Subject === 'New Match Invite!' && m.To?.some((t) => t.Address === host.email),
+  );
+});
+
+// The body must name the CHALLENGER, which is what proves the sender/receiver mapping
+// is right rather than merely non-crashing — a swapped mapping still delivers an email.
+await poll('invite email names the challenging team (sender/receiver mapping correct)', async () => {
+  const res = await fetch(`${MAILPIT}/api/v1/search?query=${encodeURIComponent(host.email)}`);
+  if (!res.ok) return false;
+  const { messages = [] } = await res.json();
+  const msg = messages.find((m) => m.Subject === 'New Match Invite!');
+  if (!msg) return false;
+  const full = await fetch(`${MAILPIT}/api/v1/message/${msg.ID}`);
+  if (!full.ok) return false;
+  const body = await full.json();
+  const html = body.HTML ?? body.Text ?? '';
+  return html.includes(guest.teamName) && html.includes(host.teamName);
+});
 
 console.log('\n--- 8. Host accepts the invite ---');
 const accepted = await api(`/v1/match/respond-to-invites/${inviteId}`, {
