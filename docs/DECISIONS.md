@@ -4,7 +4,10 @@ Every meaningful decision, in the order it was made, with the reasoning behind i
 Commits that implement a decision cite its ID in the commit message, so
 `git log --grep=D-05` returns every line of code a decision produced.
 
-Root decisions (`D-NN`) are frozen after Phase 0. Service-level decisions live in
+Root decisions (`D-NN`) were frozen for the duration of Phase 1 — four agents in four
+worktrees appending to one file would conflict on every merge after the first (D-09).
+The freeze ended when the branches merged: D-11 onward are Phase 2 decisions, written by
+a single owner against a single branch. Service-level decisions live in
 `<service>/DECISIONS.md` with service-prefixed IDs.
 
 | Service | Log | Prefix |
@@ -169,3 +172,172 @@ is the first decision to question.
 - Verified against amqplib 2.0.1's own `index.d.ts`: `connect()` returns `ChannelModel`,
   `prefetch`/`close`/`assertQueue` are promise-returning, and `nack(msg, allUpTo, requeue)` is
   unchanged. The D-05 client design needed no adjustment for the two-major jump.
+
+---
+
+# Phase 2 — integration
+
+D-01 through D-10 were made before any code was written. What follows was made while
+merging the five ports into one working stack, in the order the problems appeared.
+
+## D-11 — Regenerating this lockfile requires clearing *every* `node_modules`, not just the root
+
+**Decision:** the only supported way to regenerate the workspace lockfile is
+
+```sh
+rm -rf node_modules package-lock.json */node_modules packages/shared/node_modules
+npm install
+```
+
+**Why:** the first regeneration (342fc25) removed only `node_modules` and `package-lock.json`
+and left the per-service `*/node_modules` trees behind from the Phase 1 worktree installs
+(D-07). npm read those as already-satisfied and skipped resolving that part of the tree, so
+the lockfile it wrote was incomplete: `express@5.2.1` declares `router@^2.2.0`, and `router`
+appeared in neither the lockfile nor `node_modules`. Every one of the five services died at
+startup with `Cannot find module 'router'` — in Docker *and* locally, which is what ruled out
+the container build as the cause. Fixed in 7fd2b02 (3950 insertions, 4995 deletions against a
+lockfile that was supposedly already current — the size of that diff is the measure of how much
+had been skipped).
+
+**Consequence:** this is a property of npm workspaces plus the worktree strategy, not a
+one-off. It will recur every time this lockfile is regenerated, for as long as stale
+per-package `node_modules` can exist — which is any time someone has run `npm install` inside a
+service directory. A partial clean produces a lockfile that installs cleanly, passes
+`tsc`, and fails only at runtime on the first `import`. Treat any `Cannot find module '<a
+dependency you never named>'` in this repo as a symptom of this and re-run the full clean
+before debugging anything else.
+
+**Rejected:** `npm install <missing package>` to paper over the symptom — it would have added
+`router` and left every other skipped subtree still missing, converting one loud failure into
+an unknown number of quiet ones.
+
+## D-12 — Only `api-gateway` publishes a port; the datastores publish nothing
+
+**Decision:** `mongo`, `redis` and `rabbitmq` publish no host ports at all. The four downstream
+services publish none either. `api-gateway` publishes `3000:3000`, and RabbitMQ's management UI
+is published on `127.0.0.1:15672` only. The plan's draft published 27017, 6379 and 5672.
+
+**Why:** the immediate reason was a collision — the host's 27017 was already taken by an
+unrelated container. The better reason is the one that made the change permanent: not
+publishing them means nothing outside the `uff` bridge network can reach a datastore or a
+downstream service. That is the missing precondition for the `x-team-id` trust model. Backlog
+item 1 is that every downstream service trusts the `x-team-id` header unconditionally, so
+anyone who can reach a service port can impersonate any team. Not publishing the ports does not
+fix that bug, but it means the only way in is through the gateway, which sets the header from a
+verified JWT. Publishing 3001/3003/3004/3005 for convenience would have made the auth bypass
+reachable from the host.
+
+**Consequence:** debugging by pointing `mongosh` or `redis-cli` at localhost no longer works;
+use `docker compose exec`. The management UI is deliberately still reachable, bound to loopback,
+because inspecting `football.dlq` after a failed smoke test is worth one exception.
+
+**Note:** the collision class is real and recurring, not specific to Mongo — at the time of
+writing 27017 is free but a host-local Redis holds 6379. Publishing datastore ports from a
+project stack collides with whatever the developer already runs.
+
+## D-13 — RabbitMQ gets a named volume (`rabbitmq-data`)
+
+**Decision:** `rabbitmq-data:/var/lib/rabbitmq`. The plan's compose draft defined `mongo-data`
+and nothing else; `redis-data` was added at the same time.
+
+**Why:** D-05's entire fix is that the exchange and queues are durable. Durable means *written
+to disk* — and with no volume, that disk is the container's writable layer. A `docker compose
+down` would delete it, silently discarding every durable queue and every message backlog sitting
+in one, and the stack would come back up with the queues recreated empty. The bug D-05 fixed is
+messages published while a consumer is down being lost forever; without this volume that bug is
+still there, just moved from "consumer restarts" to "stack restarts". The volume is what makes
+D-05 true across restarts rather than only within a single `up`.
+
+**Consequence:** `docker compose down -v` is now destructive in a way `down` is not. It is the
+correct way to reset the smoke-test fixtures, and the wrong way to restart the stack.
+
+## D-14 — Placeholder credentials in `.env`; whether required-at-boot is right is left open
+
+**Decision:** `.env` ships placeholder values for the five third-party credentials so the stack
+boots. No service code changed.
+
+**Why:** `media-service/src/env.ts` passes `CLOUD_NAME`, `CLOUDINARY_API_KEY` and
+`CLOUDINARY_API_SECRET` through `required()`, and `notification-service/src/env.ts` does the
+same for `EMAIL_USER` and `EMAIL_APP_PASSWORD`. `required()` throws at import time, so both
+services crash-loop without them. Since `api-gateway` depends on `media-service` being healthy,
+the practical effect is that the whole stack cannot boot for testing without a Cloudinary
+account and a Gmail app password — credentials for two external services that the smoke test
+never actually calls, because it asserts database state rather than delivered mail or a real
+upload.
+
+**Open question, recorded not resolved:** should credentials for an external service be required
+at boot, or only at the point of use? Booting degraded — `media-service` up and serving reads,
+with uploads failing 503 until Cloudinary is configured — would let the rest of the system be
+tested and would let a credential rotation take effect without a restart storm. But fail-fast
+has real merit and is why the agents wrote it this way (D-MD-03): the original code read the
+Cloudinary config at module load with no validation at all, so a typo in the API secret surfaced
+as a 401 on the first upload, potentially hours after deploy. Deferring validation to the point
+of use is exactly how that bug happened. A defensible middle — validate the *shape* at boot,
+prove the *credentials* on first use, and report both on `/health` — is more design than Phase 2
+should be doing. Recorded here rather than as a new backlog item so the design spec's items 1–11
+keep their numbers.
+
+**Known inconsistency:** the comments in `.env.example` and in `docker-compose.yml`
+(`notification-service`) claim the stack boots without these values and that they only fail at
+the point of use. That is not true of the code as written — `required()` throws at import. The
+comments describe the behaviour this decision is asking about, not the behaviour that exists.
+
+## D-15 — Compose was written from the services' `env.ts`, not from the plan
+
+**Decision:** the environment variable names in `docker-compose.yml` are `CLOUD_NAME`,
+`CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `EMAIL_USER`, `EMAIL_APP_PASSWORD`. The plan
+assumed `CLOUDINARY_CLOUD_NAME` and `SMTP_USER`/`SMTP_PASS`.
+
+**Why:** the Phase 1 agents preserved the names the original code used, which was the correct
+call — renaming an env var is a deployment-breaking change disguised as tidying, and the port
+was supposed to change the language, not the interface. So the plan's names were the wrong ones,
+and the real names were read out of the five `env.ts` files when compose was written.
+
+**Consequence:** small, and worth the line it costs. A variable that is set but under the wrong
+name is indistinguishable from one that is unset — the service throws `Missing required
+environment variable: CLOUD_NAME` while `CLOUDINARY_CLOUD_NAME` sits right there in the
+environment. `.env.example` carries an inline note on the `CLOUD_NAME` line for exactly this
+reason. The general rule: when the plan and the code disagree about a name, the code wins.
+
+---
+
+# Phase 2 — what was verified
+
+Re-verified against the running stack while writing this section, not copied from the Phase 2
+notes. Commands are the evidence; anyone can re-run them.
+
+**The event bus works end to end.** `npm run smoke` → `19/19 checks passed`. That includes the
+two assertions that cross the RabbitMQ boundary and are the only checks in the migration capable
+of detecting a broken event handler (D-04): `teamName` populated on the match via the
+`fetchTeamDetails` → `TeamDetails` round-trip, and the match reaching status `matched` after the
+invite is accepted. Both poll rather than sleep. Everything goes through the gateway on `:3000`,
+so the `/v1` → `/api` rewriting and JWT verification are proved by the same run.
+
+**The D-05 topology is what it was supposed to be.** `rabbitmqctl list_queues name durable
+messages` returns nine queues, every one `durable=true`, and **zero** `amq.gen-*` queues — the
+anonymous exclusive queues that caused the message loss are gone, not merely fewer.
+`rabbitmqctl list_exchanges` shows `football.events` as a durable `topic` and
+`football.events.dlx` as a durable `fanout`. `football.dlq` exists and holds 0 messages: the
+dead-letter path is wired but nothing has poisoned it.
+
+**The whole workspace typechecks and builds under `strict`.** `npm run typecheck` (`tsc
+--noEmit` per workspace) and `npm run build` both complete with no diagnostics across all five
+services and `packages/shared`, with `strict: true` in `tsconfig.base.json`. `find <service>/src
+-name '*.js'` returns nothing for all five services and the shared package — no file was left
+behind or dual-maintained.
+
+**D-02 still holds.** The legacy monolith's twelve dependencies all still resolve by CommonJS
+`require` from the repo root after the lockfile regeneration, on the root's own `express@4.22.2`
+while the services resolve `express@5.2.1` — which is the arrangement D-02 and D-10 were
+counting on.
+
+**Advisories: 16 → 1.** Measured today with the current advisory database:
+`npm audit --package-lock-only` against the pre-migration lockfile (77702a3, the last commit
+before the workspace existed) reports 16 findings — 1 low, 3 moderate, 12 high. The Phase 2
+notes recorded 15; advisory counts drift as the database is updated, so the two numbers are the
+same measurement taken at different times, and neither is wrong. Against the current lockfile,
+`npm audit` reports one high-severity finding, and it is
+`nodemailer@6.10.1` — the *monolith's* pinned dependency under D-02, not the services'.
+`notification-service` is on `nodemailer@9.0.5` and is clean. The remaining advisory is
+therefore bounded by exactly the code D-02 chose not to migrate, and closing it means either
+porting the monolith or bumping a dependency of code that is not otherwise being touched.
