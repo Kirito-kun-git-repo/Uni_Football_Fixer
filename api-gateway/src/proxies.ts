@@ -23,6 +23,7 @@ function createServiceProxy(
   target: string,
   logger: Logger,
   decorateHeaders: HeaderDecorator,
+  internalSecret?: string,
 ): RequestHandler {
   return proxy(target, {
     // The gateway's entire routing contract: the public `/v1` prefix becomes the
@@ -40,6 +41,22 @@ function createServiceProxy(
 
     proxyReqOptDecorator: (proxyReqOpts, srcReq) => {
       decorateHeaders(proxyReqOpts.headers, srcReq);
+
+      /**
+       * Proof that this request came through the gateway.
+       *
+       * Injected here rather than in each `decorateHeaders` so it cannot be forgotten
+       * on a future proxy — every service the gateway fronts gets it automatically.
+       * Downstream, `createAuthenticateRequest` rejects anything without it, which is
+       * what makes `x-team-id` safe to trust when the services have public URLs.
+       *
+       * Note this header is ADDED to the outbound request only. A client that sends
+       * its own `x-internal-secret` cannot benefit: it is overwritten here, and a
+       * request that skips the gateway never reaches this code at all.
+       */
+      if (internalSecret && proxyReqOpts.headers) {
+        proxyReqOpts.headers['x-internal-secret'] = internalSecret;
+      }
       return proxyReqOpts;
     },
 
@@ -58,10 +75,20 @@ function createServiceProxy(
  * tokens are issued, so requiring one would make login unreachable. It also means
  * `GET /v1/auth/getTeamById/:teamId` is public — preserved, backlog item 1.
  */
-export function createIdentityProxy(target: string, logger: Logger): RequestHandler {
-  return createServiceProxy('identity', target, logger, (headers) => {
-    headers['Content-Type'] = 'application/json';
-  });
+export function createIdentityProxy(
+  target: string,
+  logger: Logger,
+  internalSecret?: string,
+): RequestHandler {
+  return createServiceProxy(
+    'identity',
+    target,
+    logger,
+    (headers) => {
+      headers['Content-Type'] = 'application/json';
+    },
+    internalSecret,
+  );
 }
 
 /**
@@ -71,29 +98,49 @@ export function createIdentityProxy(target: string, logger: Logger): RequestHand
  * `multipart/form-data` with multer, and overwriting the boundary-carrying header
  * with `application/json` would make every upload unparseable.
  */
-export function createMediaProxy(target: string, logger: Logger): RequestHandler {
-  return createServiceProxy('media', target, logger, (headers, srcReq) => {
-    // `validateToken` runs before this handler and 401s without it, so `team` is
-    // always populated here. The assertion documents that ordering dependency.
-    headers['x-team-id'] = srcReq.team!.teamId;
+export function createMediaProxy(
+  target: string,
+  logger: Logger,
+  internalSecret?: string,
+): RequestHandler {
+  return createServiceProxy(
+    'media',
+    target,
+    logger,
+    (headers, srcReq) => {
+      // `validateToken` runs before this handler and 401s without it, so `team` is
+      // always populated here. The assertion documents that ordering dependency.
+      headers['x-team-id'] = srcReq.team!.teamId;
 
-    // D-GW-04: the original called `.startsWith()` on the raw header, which is
-    // `undefined` on any request without a body — every GET and DELETE to
-    // /v1/media/* threw a TypeError before reaching the upstream. The optional
-    // chain makes a missing Content-Type behave like a non-multipart request.
-    if (!(srcReq.headers['content-type']?.startsWith('multipart/form-data') ?? false)) {
-      headers['Content-Type'] = 'application/json';
-    }
-  });
+      // D-GW-04: the original called `.startsWith()` on the raw header, which is
+      // `undefined` on any request without a body — every GET and DELETE to
+      // /v1/media/* threw a TypeError before reaching the upstream. The optional
+      // chain makes a missing Content-Type behave like a non-multipart request.
+      if (!(srcReq.headers['content-type']?.startsWith('multipart/form-data') ?? false)) {
+        headers['Content-Type'] = 'application/json';
+      }
+    },
+    internalSecret,
+  );
 }
 
 /**
  * `/v1/match/*` -> match-service. Mounted behind `validateToken`.
  */
-export function createMatchProxy(target: string, logger: Logger): RequestHandler {
-  return createServiceProxy('match', target, logger, (headers, srcReq) => {
-    headers['x-team-id'] = srcReq.team!.teamId;
-    logger.info(srcReq.team!.teamId);
-    headers['Content-Type'] = 'application/json';
-  });
+export function createMatchProxy(
+  target: string,
+  logger: Logger,
+  internalSecret?: string,
+): RequestHandler {
+  return createServiceProxy(
+    'match',
+    target,
+    logger,
+    (headers, srcReq) => {
+      headers['x-team-id'] = srcReq.team!.teamId;
+      logger.info(srcReq.team!.teamId);
+      headers['Content-Type'] = 'application/json';
+    },
+    internalSecret,
+  );
 }

@@ -24,4 +24,12 @@ export const env = {
   REDIS_URL: required('REDIS_URL'),
   RABBITMQ_URL: required('RABBITMQ_URL'),
   JWT_SECRET: required('JWT_SECRET'),
+
+  /**
+   * Shared secret proving a request came through the gateway. OPTIONAL by design:
+   * when unset the service behaves exactly as before, which keeps compose and
+   * single-host deployments working unchanged. Set it whenever the service has a
+   * publicly reachable URL. See packages/shared/src/auth.ts.
+   */
+  INTERNAL_SECRET: process.env['INTERNAL_SECRET'] ?? '',
 } as const;

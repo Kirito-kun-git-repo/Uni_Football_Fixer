@@ -102,9 +102,9 @@ app.set('trust proxy', 1);
 // downstream trusts the `x-team-id` header this produces (backlog item 1).
 const validateToken = createValidateToken(env.JWT_SECRET, logger);
 
-app.use('/v1/auth', createIdentityProxy(env.IDENTITY_SERVICE_URL, logger));
-app.use('/v1/media', validateToken, createMediaProxy(env.MEDIA_SERVICE_URL, logger));
-app.use('/v1/match', validateToken, createMatchProxy(env.MATCH_SERVICE_URL, logger));
+app.use('/v1/auth', createIdentityProxy(env.IDENTITY_SERVICE_URL, logger, env.INTERNAL_SECRET));
+app.use('/v1/media', validateToken, createMediaProxy(env.MEDIA_SERVICE_URL, logger, env.INTERNAL_SECRET));
+app.use('/v1/match', validateToken, createMatchProxy(env.MATCH_SERVICE_URL, logger, env.INTERNAL_SECRET));
 
 // Registered last, after all routes. Express 5 funnels async rejections here
 // automatically, which Express 4 did not.

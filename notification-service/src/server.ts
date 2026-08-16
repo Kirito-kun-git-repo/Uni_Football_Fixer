@@ -53,7 +53,7 @@ app.get('/health', (_req, res) => {
  * answers 401 instead of 404. Kept rather than deleted so that response stays the
  * same; see DECISIONS.md for why deleting it was rejected.
  */
-app.use(createAuthenticateRequest(logger));
+app.use(createAuthenticateRequest(logger, env.INTERNAL_SECRET));
 
 // Registered last, after every route. Express 5 funnels async rejections here.
 app.use(createErrorHandler(logger));

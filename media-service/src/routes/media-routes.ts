@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { env } from '../env.js';
 import multer from 'multer';
 import type { Logger } from '@uff/shared/logger';
 import { createAuthenticateRequest } from '@uff/shared/auth';
@@ -14,7 +15,7 @@ export function createMediaRouter(logger: Logger): Router {
   const controller = createMediaController(logger);
   // `createAuthenticateRequest`, NOT `createValidateToken`: this service trusts the
   // `x-team-id` header the gateway injected and verifies no JWT of its own.
-  const authenticateRequest = createAuthenticateRequest(logger);
+  const authenticateRequest = createAuthenticateRequest(logger, env.INTERNAL_SECRET);
 
   /**
    * `memoryStorage` means the entire upload is buffered in the process before

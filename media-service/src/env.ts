@@ -30,4 +30,12 @@ export const env = {
   CLOUD_NAME: required('CLOUD_NAME'),
   CLOUDINARY_API_KEY: required('CLOUDINARY_API_KEY'),
   CLOUDINARY_API_SECRET: required('CLOUDINARY_API_SECRET'),
+
+  /**
+   * Shared secret proving a request came through the gateway. OPTIONAL by design:
+   * when unset the service behaves exactly as before, which keeps compose and
+   * single-host deployments working unchanged. Set it whenever the service has a
+   * publicly reachable URL. See packages/shared/src/auth.ts.
+   */
+  INTERNAL_SECRET: process.env['INTERNAL_SECRET'] ?? '',
 } as const;

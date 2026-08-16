@@ -49,7 +49,7 @@ app.get('/health', (_req, res) => {
 //routes
 // Trusts the `x-team-id` header the gateway injects, with no verification of any
 // kind. Applied globally, before both routers, exactly as the original did.
-app.use(createAuthenticateRequest(logger));
+app.use(createAuthenticateRequest(logger, env.INTERNAL_SECRET));
 
 // Both routers mount on the same prefix. inviteRoutes MUST stay first: matchRoutes
 // ends in a `GET /:id` catch-all that would otherwise shadow the invite GETs.

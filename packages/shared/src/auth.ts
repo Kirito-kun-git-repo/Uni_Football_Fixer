@@ -1,6 +1,21 @@
+import crypto from 'node:crypto';
 import type { RequestHandler } from 'express';
 import jwt from 'jsonwebtoken';
 import type { Logger } from './logger.js';
+
+/**
+ * Constant-time comparison. A plain `!==` on a secret leaks its prefix through
+ * response timing; with public service URLs that is a practical attack, not a
+ * theoretical one.
+ *
+ * `timingSafeEqual` throws on length mismatch, which would itself leak length, so
+ * both sides are hashed to a fixed 32 bytes first.
+ */
+function secretsMatch(provided: string, expected: string): boolean {
+  const a = crypto.createHash('sha256').update(provided).digest();
+  const b = crypto.createHash('sha256').update(expected).digest();
+  return crypto.timingSafeEqual(a, b);
+}
 
 /**
  * What lands on `req.team`.
@@ -54,16 +69,49 @@ export function createValidateToken(secret: string, logger: Logger): RequestHand
 }
 
 /**
- * Downstream services. Reads the `x-team-id` header the gateway injected and trusts
- * it unconditionally — no signature, no shared secret, no verification of any kind.
+ * Downstream services. Reads the `x-team-id` header the gateway injected.
  *
- * This is an authentication bypass for anyone who can reach a service port directly.
- * It is preserved deliberately: fixing it requires a coordinated change across the
- * gateway and all four downstream services, which is out of scope for this migration.
- * Backlog item 1.
+ * `x-team-id` alone is NOT authentication — it is an unsigned assertion of identity.
+ * Whether that is safe depends entirely on whether the caller could have reached this
+ * service without passing through the gateway. Under docker-compose the answer is no,
+ * because the service publishes no host port (D-12). On a platform where every service
+ * gets its own public URL, the answer is yes, and the header alone means anyone can
+ * impersonate any team with a single curl.
+ *
+ * `internalSecret` closes that. When supplied, a request must also carry a matching
+ * `x-internal-secret` header, which only the gateway knows how to add. Callers that
+ * bypass the gateway are rejected before `x-team-id` is even read.
+ *
+ * When it is NOT supplied the behaviour is exactly as before — deliberately, so that
+ * a compose or single-host deployment, where network topology already provides the
+ * guarantee, keeps working without configuration. Set it whenever a service is
+ * reachable from outside; leave it unset when it demonstrably is not.
+ *
+ * This is the fix for backlog A-1's impersonation half.
  */
-export function createAuthenticateRequest(logger: Logger): RequestHandler {
+export function createAuthenticateRequest(
+  logger: Logger,
+  internalSecret?: string,
+): RequestHandler {
+  if (!internalSecret) {
+    logger.warn(
+      'INTERNAL_SECRET is not set — this service trusts the x-team-id header from any ' +
+        'caller. Safe only if it cannot be reached without passing through the gateway.',
+    );
+  }
+
   return (req, res, next) => {
+    if (internalSecret) {
+      const provided = req.headers['x-internal-secret'];
+      if (typeof provided !== 'string' || !secretsMatch(provided, internalSecret)) {
+        // Deliberately terse and identical to the missing-team-id response: a caller
+        // probing directly should not learn whether the secret is the thing that failed.
+        logger.warn('Rejected a request that did not come through the gateway');
+        res.status(401).json({ message: 'Authentication required ! Please Login to continue' });
+        return;
+      }
+    }
+
     const teamId = req.headers['x-team-id'];
 
     if (!teamId || typeof teamId !== 'string') {

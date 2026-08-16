@@ -82,6 +82,7 @@ services:
       dockerfile: identity-service/Dockerfile
     environment:
       NODE_ENV: production
+      INTERNAL_SECRET: ${INTERNAL_SECRET:-}
       PORT: 3001
       MONGODB_URL: mongodb://mongo:27017/uff-identity
       REDIS_URL: redis://redis:6379
@@ -106,6 +107,7 @@ services:
       dockerfile: media-service/Dockerfile
     environment:
       NODE_ENV: production
+      INTERNAL_SECRET: ${INTERNAL_SECRET:-}
       PORT: 3003
       MONGODB_URL: mongodb://mongo:27017/uff-media
       REDIS_URL: redis://redis:6379
@@ -133,6 +135,7 @@ services:
       dockerfile: match-service/Dockerfile
     environment:
       NODE_ENV: production
+      INTERNAL_SECRET: ${INTERNAL_SECRET:-}
       PORT: 3004
       MONGODB_URL: mongodb://mongo:27017/uff-match
       REDIS_URL: redis://redis:6379
@@ -160,6 +163,7 @@ services:
       dockerfile: notification-service/Dockerfile
     environment:
       NODE_ENV: production
+      INTERNAL_SECRET: ${INTERNAL_SECRET:-}
       PORT: 3005
       MONGODB_URL: mongodb://mongo:27017/uff-notification
       REDIS_URL: redis://redis:6379
@@ -199,6 +203,7 @@ services:
       - "3000:3000"
     environment:
       NODE_ENV: production
+      INTERNAL_SECRET: ${INTERNAL_SECRET:-}
       PORT: 3000
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
