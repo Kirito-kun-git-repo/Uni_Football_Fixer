@@ -84,9 +84,18 @@ app.use((req, _res, next) => {
 });
 
 // Preserved in its original position, which is AFTER the rate limiter (issue 1).
-// express-rate-limit reads this setting when it keys on `req.ip`, so registering it
-// late is a live bug behind a load balancer. Moving it is a behaviour change and
-// belongs with the rate-limiting rework, not with the port (D-GW-06).
+//
+// The position is harmless, contrary to what this comment used to claim: `req.ip` is
+// a lazy per-request getter and this runs during boot, so the limiter does honour the
+// setting regardless of where it sits. Verified against the running stack — a request
+// carrying `X-Forwarded-For: 203.0.113.99` created the Redis key `rl:203.0.113.99`.
+//
+// The setting ITSELF is the live problem: nothing sits in front of this gateway to
+// sanitise the header, so any client can hand itself a fresh rate-limit bucket by
+// inventing an X-Forwarded-For, and rotating it bypasses the limiter entirely. This is
+// the only active limiter in the system. Still preserved rather than fixed — it is a
+// behaviour change that belongs with the rate-limiting rework (D-GW-06) — but it is a
+// security gap, not the ordering nit it was originally filed as. See FLOW.md.
 app.set('trust proxy', 1);
 
 // The single point in the entire system where a JWT signature is verified. Everything
