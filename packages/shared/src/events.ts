@@ -34,18 +34,25 @@ export interface EnrichedTeam {
 }
 
 /**
- * A full Mongoose Team document after `.toObject()`.
+ * A Team document as it travels on the bus.
  *
- * D-05: this includes `password` — the argon2 hash is published onto the bus by
- * identity-service's `handleTeamDetailEvent`. Preserved to keep the port
- * behavior-preserving; recorded as backlog item 12.
+ * `password` is DELIBERATELY ABSENT and must stay absent (A-1). The argon2 hash used
+ * to ride this payload: `handleTeamDetailEvent` published `result.toObject()` whole,
+ * so the hash reached match-service and was written verbatim into its stdout by a
+ * consumer that logs the event it receives.
+ *
+ * The producer now projects it away at the query (`.select('-password')`), so the
+ * value never exists to be leaked rather than being deleted after the fact. Omitting
+ * it from this type is the second layer: anyone re-adding it to a publish site has to
+ * change this contract first, which is a visible decision rather than an accident.
+ *
+ * Nothing downstream ever read it — verified across all four consuming services.
  */
 export interface TeamDocumentPayload {
   _id: string;
   teamName: string;
   collegeName: string;
   email: string;
-  password: string;
   logoUrl?: string;
   role: 'TEAM' | 'ADMIN';
   createdAt: string;

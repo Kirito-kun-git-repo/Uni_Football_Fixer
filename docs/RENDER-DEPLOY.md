@@ -116,9 +116,9 @@ because that is where tokens are issued. So the hash is publicly readable to any
 a team id. `INTERNAL_SECRET` does not close this, because the request legitimately comes
 through the gateway.
 
-The fix is a projection in identity-service (`.select('-password')` on that route, and
-strip it from the `TeamDetails` event payload). It is backlog **A-1**, it is small, and
-it is worth doing before this is exposed to anyone real.
+**FIXED** — see D-20. `.select('-password')` on both escape points; `getTeamById` no longer returns
+a `password` field and the hash no longer travels the bus. Verified after the fact with a log
+grep that still finds the pre-fix occurrence, so the zero is meaningful.
 
 ---
 

@@ -162,13 +162,24 @@ export function createIdentityController(logger: Logger) {
    * This is the only route another service calls, and it sits on the hot path of
    * the invite flow.
    *
-   * Returns the full Team document, password hash included. Preserved; backlog item 12.
+   * A-1: `.select('-password')` is the important part of this line.
+   *
+   * The gateway does not require a JWT on `/v1/auth` — that is where tokens are
+   * issued, so demanding one would make login unreachable — which means this route is
+   * PUBLIC. It previously returned the whole Team document, so the argon2 hash was
+   * readable by anyone who knew a team id, over the internet, with no credentials.
+   * `INTERNAL_SECRET` does not help here: the request arrives legitimately through
+   * the gateway.
+   *
+   * Projecting the field away is the fix. Nothing that calls this route has ever read
+   * `password` — match-service uses `teamName`, `email` and `collegeName` for
+   * enrichment.
    */
   const getTeamById = async (req: Request, res: Response): Promise<void> => {
     const { teamId } = req.params;
     logger.info(`Fetching team with ID ${teamId}`);
     try {
-      const team = await Team.findById(teamId);
+      const team = await Team.findById(teamId).select('-password');
       if (!team) {
         logger.warn(`Team with ID ${teamId} not found`);
         res.status(404).json({ message: 'Team not found' });

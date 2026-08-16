@@ -38,14 +38,21 @@ export function createEventHandlers(logger: Logger) {
   };
 
   /**
-   * match-service asked for a full team document to denormalise onto a Match.
-   * Publishes the entire document — password hash included. Backlog item 12.
+   * match-service asked for a team document to denormalise onto a Match.
+   *
+   * A-1: `.select('-password')` is load-bearing. This handler previously published
+   * `result.toObject()` whole, so the argon2 hash travelled the bus and was logged
+   * verbatim by the consumer on the other side. Projecting at the query means the
+   * value never enters the process, rather than being deleted from an object that
+   * already holds it — there is no window and nothing to forget.
+   *
+   * Only `teamName` and `collegeName` are actually read downstream.
    */
   const handleTeamDetailEvent = async (event: EventMap['fetchTeamDetails']): Promise<void> => {
     logger.info('Handling team detail event', event);
     try {
       const { teamId, matchId } = event;
-      const result = await Team.findById(teamId);
+      const result = await Team.findById(teamId).select('-password');
       if (!result) {
         logger.error(`No team found for id ${teamId}`);
         throw new Error(`No team found for id ${teamId}`);

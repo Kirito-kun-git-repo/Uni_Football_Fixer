@@ -501,6 +501,45 @@ and it still publishes a third payload shape carrying only the receiver's detail
 all, so it cannot name the challenger even if reached. Making it reachable now would surface that
 third shape. A-13 stays open on its second half; see the status note there.
 
+## D-20 — A-1 closed: gateway-proof header, and the hash projected away at the query
+
+**Decision:** close both halves of A-1 before deploying to a platform where every service has
+a public URL, rather than shipping and fixing after.
+
+**Why now:** the Render topology changes the severity. Under compose, A-1's impersonation half
+is bounded by D-12 — the downstream services publish no host port, so nothing outside the
+bridge network can forge `x-team-id`. On Render's free tier the only option is five public Web
+Services, and that boundary disappears. The same defect goes from "unreachable" to a one-curl
+exploit. Deploying first would have meant knowingly publishing it.
+
+**Two fixes, because there are two mechanisms.**
+
+*Impersonation.* `createAuthenticateRequest(logger, internalSecret?)`. When the secret is set, a
+request must also carry a matching `x-internal-secret`, injected by the gateway in its shared
+proxy factory — one place, so a future proxy cannot forget it. Comparison is constant-time over
+sha256 digests; with public URLs, timing a secret's prefix is practical rather than theoretical.
+
+*Disclosure.* `.select('-password')` at both escape points, and `password` deleted from
+`TeamDocumentPayload`. The projection is at the query deliberately: deleting the field after
+`toObject()` would leave a window where the process holds the hash, and a future call site could
+forget the delete. Not existing is stronger than being removed.
+
+**The optional parameter is the important design choice.** Unset, behaviour is byte-identical to
+before, so compose, a VPS, or any deployment where network topology already provides the
+guarantee keeps working with no configuration. The secret is opt-in for the topologies that need
+it. A required parameter would have forced configuration onto deployments that do not.
+
+**Accepted limitation:** the two fixes do not compose into full protection of `/v1/auth`.
+`getTeamById` remains publicly callable through the gateway — deliberately, since `/v1/auth` is
+where tokens are issued and requiring a JWT would make login unreachable. The projection is what
+makes that acceptable: the route is still public, but it no longer discloses anything sensitive.
+Requiring auth on that one route would break match-service's synchronous enrichment, which calls
+it without a token.
+
+**Verified**, not asserted: 401 direct without the secret, 200 with it, 21/21 smoke through the
+gateway, `getTeamById` returning no `password` field, and `$argon2id` at 0 occurrences in
+match-service's logs after a full run against 1 historically.
+
 ---
 
 # Deferred backlog
@@ -551,6 +590,30 @@ prefix is public. Confirmed by curl from the host: an unauthenticated
 publishes it whole as `TeamDetails` — and consumers log the payload verbatim, so the hash lands in
 match-service's stdout as well. Three exposures, one root cause: identity-service has no projection.
 Fix it there. Redacting the consumer's log line leaves the hash on the bus and at the public edge.
+
+> **STATUS — CLOSED. Both halves fixed; see D-20.**
+>
+> **Impersonation half** (`e46913d`): `createAuthenticateRequest` now takes an optional
+> `internalSecret`. The gateway injects `x-internal-secret` on every proxied request and the
+> downstream services reject anything without it, so a direct call to a public service URL
+> carrying a forged `x-team-id` is refused. Verified both directions on the live stack: **401**
+> without the secret, **200** with it.
+>
+> **Disclosure half** (`this commit`): `.select('-password')` on both escape points —
+> `getTeamById` and `handleTeamDetailEvent` — and `password` removed from
+> `TeamDocumentPayload` so re-adding it requires editing the contract. Projecting at the query
+> means the value never enters the process, rather than being deleted from an object that
+> already holds it.
+>
+> Verified: `getTeamById` now returns `_id, teamName, collegeName, email, role, createdAt,
+> updatedAt, __v` and no `password`; `$argon2id` appears **0** times in match-service's logs
+> after a full smoke run, against **1** occurrence historically — the historical hit is what
+> makes the zero meaningful rather than a broken grep.
+>
+> The analysis above was right that all three exposures share one root cause and that the fix
+> belonged in identity-service. It was wrong on one point of scope: it implied a single change
+> would close everything. Two were needed, because the disclosure is reachable *through* the
+> gateway and `INTERNAL_SECRET` therefore cannot see it.
 
 **A-2 — HIGH — There is no RabbitMQ reconnect, and `/health` cannot see that.** [packages/shared]
 `connection.on('close')` logs a warning and does nothing else. The module-level `channel` stays
