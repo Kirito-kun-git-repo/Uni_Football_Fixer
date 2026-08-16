@@ -33,4 +33,23 @@ export const env = {
    * the enrichment calls re-enter the public edge. Backlog item 3.
    */
   GATEWAY_URL: process.env['GATEWAY_URL'] ?? 'http://localhost:3000',
+
+  /**
+   * Per-request deadline for the synchronous enrichment lookups in both invite
+   * controllers. Applies to each individual `getTeamById` call, not to the batch.
+   *
+   * Raised from the original hardcoded 700 ms in `createInvite`, and applied for the
+   * first time to `respondToInvite`, which previously passed no timeout at all.
+   *
+   * 700 ms had to cover two chained network hops — match → gateway → identity →
+   * Mongo — which is comfortable on a warm local stack and has no headroom on a
+   * loaded one. Overshooting the deadline is not a harmless retry here: the caller
+   * swallows the failure and publishes a `notification` carrying only team ids, and
+   * notification-service cannot send an email without an address. Waiting longer for
+   * a correct payload beats failing fast into a degraded one.
+   *
+   * Overridable without a compose change, so this can be tuned per environment
+   * rather than recompiled.
+   */
+  ENRICHMENT_TIMEOUT_MS: Number(process.env['ENRICHMENT_TIMEOUT_MS'] ?? 2500),
 } as const;

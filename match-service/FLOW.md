@@ -32,16 +32,20 @@ an opaque driver timeout thirty seconds later.
 9. `startServer()`: Mongo connect → RabbitMQ connect → 3 consumers registered → **then**
    `app.listen`. The original connected to Mongo outside this sequence and never awaited it, so the
    listener could accept a request before the database was up.
-10. `SIGTERM`/`SIGINT` → `shutdown()`: stop accepting → close RabbitMQ → close Mongo → disconnect
-    Redis → `process.exit(0)`.
+10. `SIGTERM`/`SIGINT` → `shutdown()`: re-entry guard → stop accepting → drop idle keep-alives →
+    **await** in-flight responses → close RabbitMQ → close Mongo → disconnect Redis →
+    `process.exit(0)`, under an 8s deadline.
 
-    **It stops accepting; it does not drain.** `server.close()` is called but its callback is never
-    awaited, and `process.exit(0)` runs unconditionally as soon as Mongo has closed — so whether an
-    in-flight response finishes, and whether `HTTP server closed` is ever logged, is a race against
-    that exit. `shutdown()` also has no try/catch of its own and is invoked as `void shutdown(...)`:
-    if `closeRabbitMQ()` or `mongoose.connection.close()` rejects, the rejection lands in the
-    `unhandledRejection` handler, which logs without exiting, and the process then waits for Docker's
-    SIGKILL. Correct as "graceful" only in the sense that the listener stops first.
+    **Fixed after the runtime audit; see "Post-audit fixes".** It previously stopped accepting but
+    did not drain: `server.close()`'s callback was never awaited and `process.exit(0)` ran
+    unconditionally, so an in-flight response raced the exit. It also had no try/catch while being
+    invoked as `void shutdown(...)`, so a rejecting close landed in `unhandledRejection` — which logs
+    without exiting — and the process sat until Docker's SIGKILL.
+
+    The deadline is 8s against Docker's 10s default grace period, so this process picks its own exit
+    code rather than being SIGKILLed mid-close. `server.closeIdleConnections()` is the load-bearing
+    call: without it, `close()` waits on keep-alive sockets parked between requests — exactly what
+    the gateway holds — and would reach the deadline on every shutdown.
 
 ## HTTP request paths
 
@@ -94,8 +98,8 @@ them.
 | Flow | Path A shape | Path B trigger | Path B shape |
 |---|---|---|---|
 | `createMatch` | **commented out in the original — never runs** | always (`teamData` is permanently null) | `fetchTeamDetails` → `TeamDetails` → `handleTeamDetailEvent` writes `teamName`/`collegeName` onto the Match |
-| `createInvite` | `Promise.allSettled` of two lookups, 700 ms timeout → publishes `notification` **without `purpose`** | only if `publishEvent` throws — `allSettled` never rejects (issue 6) | `fetchTeamDetailsForMatchInviteCreated` → `TeamDetailsForMatchInvite` → `handleTeamDetailForMatchInviteEvent` republishes **with `purpose: 'invite'`** |
-| `respondToInvite` | sequential lookups, **no timeout**, one per team → publishes `notification` with `purpose: 'match.fixed'` | only if the outer try throws — the inner per-team try swallows failures (issue 10) | `fetchTeamDetailsForRespondingToInvite` → `teamDetailsForRespondingToInvite` → `handleTeamDetailForRespondingToInviteEvent` regroups by role and republishes with `purpose: 'match.fixed'` |
+| `createInvite` | `Promise.allSettled` of two lookups, `env.ENRICHMENT_TIMEOUT_MS` (was a hardcoded 700 ms) → publishes `notification` **without `purpose`** | only if `publishEvent` throws — `allSettled` never rejects (issue 6) | `fetchTeamDetailsForMatchInviteCreated` → `TeamDetailsForMatchInvite` → `handleTeamDetailForMatchInviteEvent` republishes **with `purpose: 'invite'`** |
+| `respondToInvite` | sequential lookups, one per team, each bounded by `env.ENRICHMENT_TIMEOUT_MS` (previously **no timeout at all**) → publishes `notification` with `purpose: 'match.fixed'` | only if the outer try throws — the inner per-team try swallows failures (issue 10) | `fetchTeamDetailsForRespondingToInvite` → `teamDetailsForRespondingToInvite` → `handleTeamDetailForRespondingToInviteEvent` regroups by role and republishes with `purpose: 'match.fixed'` |
 
 **The single most important line in this service is one that does nothing.** In `createInvite`'s
 payload, `// purpose:'invite',` is commented out. notification-service switches on `event.purpose`,
@@ -140,9 +144,11 @@ Two corrections to that, both from reading the shared client rather than the han
 - It is not *entirely* unreachable. `JSON.parse` runs inside `consumeEvent`'s try, **before** the
   handler, so a message whose body is not valid JSON nacks without requeue and does reach
   `football.dlq`. Only handler-level failures are swallowed.
-- `handleTeamDetailForMatchInviteEvent` publishes with `void publishEvent(...)`, unawaited. A
-  publish failure there does not reach its own catch either — it surfaces as an
-  `unhandledRejection`, which this service logs without exiting. The other two handlers await.
+- `handleTeamDetailForMatchInviteEvent` used to publish with `void publishEvent(...)`, unawaited —
+  the only such call site in the repo. A publish failure there did not reach its own catch: it
+  surfaced as an `unhandledRejection`, which this service logs without exiting, so a dropped
+  notification was recorded as a stray rejection rather than a handler error. **Now awaited**,
+  consistent with the other two handlers. See "Post-audit fixes".
 
 Observed live: `football.dlq` holds 0 messages, and all three consumer queues are durable with
 exactly one consumer each.
@@ -186,8 +192,10 @@ exactly one consumer each.
 - `note` and `idempotencyKey` still passed to `MatchInvite.create()` and still dropped; still no
   idempotency (issue 7, D-MT-05).
 - The three non-transactional writes in the accept flow (issue 8).
-- Sequential, timeout-free axios calls inside `respondToInvite`, so latency still scales with the
-  number of invites (issue 9).
+- Sequential axios calls inside `respondToInvite`, so latency still scales with the number of
+  invites (issue 9). They are no longer timeout-free — see "Post-audit fixes" — but they are still
+  sequential, so the worst case is now bounded at `teams × ENRICHMENT_TIMEOUT_MS` rather than
+  unbounded. Making them concurrent is the remaining half of issue 9.
 - `getAllMatches` returning every match unpaginated (issue 12); `getMatchById` returning `200` with
   a `null` body (issue 15).
 - No indexes on `Match.teamId` or `Match.status` (issue 13, D-MT-08).
@@ -255,9 +263,12 @@ Things that work in the current stack but rest on assumptions the code does not 
    largest gap between what the service reports and what it can do. Not reproduced live — doing so
    means restarting RabbitMQ under a shared stack — but it follows directly from the shared client,
    which contains no reconnect path.
-2. **Shutdown does not drain and can hang.** See startup step 10.
+2. ~~**Shutdown does not drain and can hang.**~~ **Fixed** — see startup step 10 and "Post-audit
+   fixes".
 3. **Enrichment depends on the gateway, which depends on this service being healthy.** The cycle is
-   benign once the stack is warm and invisible while it is not.
+   benign once the stack is warm and invisible while it is not. Not a boot deadlock: this service's
+   health probe does not touch the gateway, so the ordering resolves on its own. Left as-is —
+   `docker-compose.yml` is outside this service's boundary.
 4. **`GET /v1/auth/getTeamById/:id` — the endpoint both enrichment paths call — returns the full
    team document including the argon2 password hash, with no authentication, on the published
    gateway port.** That hash consequently lands in this service's stdout: `handleTeamDetailEvent`
@@ -266,10 +277,42 @@ Things that work in the current stack but rest on assumptions the code does not 
    `teamName`, `email` and `collegeName`. The fix belongs in identity-service's projection, not
    here; reported to the coordinator rather than patched locally, since redacting the log line would
    leave the hash on the bus and at the public edge.
-5. **`createInvite`'s 700 ms enrichment budget covers two sequential network hops** (match →
-   gateway → identity → Mongo, twice, in parallel). It is comfortable on a warm local stack and has
-   no headroom for a loaded one. When it does blow, `allSettled` means the invite is still created
-   and a `notification` still published, just with `teamId`-only teams (issue 6).
-6. **`respondToInvite` has no timeout at all** on its per-team lookups, and does them sequentially
-   while an HTTP client waits (issue 9). One unresponsive gateway hangs the accept response until
-   axios' default socket timeout, which is none.
+5. ~~**`createInvite`'s 700 ms enrichment budget covers two sequential network hops**~~ (match →
+   gateway → identity → Mongo, twice, in parallel). **Raised and made tunable** — see "Post-audit
+   fixes". The underlying behaviour is unchanged: when the budget does blow, `allSettled` means the
+   invite is still created and a `notification` still published, just with `teamId`-only teams
+   (issue 6). A bigger budget makes that outcome rarer, not impossible.
+6. ~~**`respondToInvite` has no timeout at all**~~ on its per-team lookups. **Fixed.** It still does
+   them sequentially while an HTTP client waits, so the remaining exposure is
+   `teams × ENRICHMENT_TIMEOUT_MS` rather than the unbounded hang it was (issue 9).
+
+## Post-audit fixes
+
+Everything above this section describes a port whose governing rule was *reproduce the original,
+report defects rather than fix them*. These four changes are the first deliberate departures from
+it, made after the runtime audit and authorised explicitly — three by the user, and the fourth
+(`await publishEvent`) by the coordinator. **They are the reason this service's image is stale: none
+of them is in the running build.**
+
+| # | Change | Files | Why it is not just a port |
+|---|---|---|---|
+| 1 | Shutdown drains, guards re-entry, catches its own failures, and exits under an 8s deadline | `src/server.ts` | The old path claimed to be graceful and was not. Everything else here is a behaviour the original *had*; this is a behaviour it only *claimed*. |
+| 2 | `ENRICHMENT_TIMEOUT_MS` (default 2500, env-overridable) replaces `createInvite`'s hardcoded 700 ms | `src/env.ts`, `src/controllers/match-Invite-Controller.ts` | Changes how often the degraded `teamId`-only notification is published. Fewer degraded payloads, slower worst-case invite response. |
+| 3 | The same deadline applied to `respondToInvite`'s per-team lookups, which had none | `src/controllers/match-Invite-Controller.ts` | Converts an unbounded hang into a bounded failure. The failure itself is still swallowed per team (issue 10), unchanged. |
+| 4 | `void publishEvent(...)` → `await publishEvent(...)` in `handleTeamDetailForMatchInviteEvent` | `src/eventHandlers/match-event-handlers.ts` | The only unawaited publish in the repo. Routes a failed publish into the handler's own catch instead of `unhandledRejection`. |
+
+What was deliberately **not** touched while doing this:
+
+- **Issue 6 stays.** `Promise.allSettled` still never rejects, so `createInvite`'s asynchronous
+  fallback is still unreachable on enrichment failure. Making it reachable would start exercising a
+  fallback that publishes a payload notification-service throws on (issue 4) — "fixing" it would
+  turn a silent degradation into a downstream crash. It needs issue 4 fixed first.
+- **Issue 9's other half stays.** The lookups are bounded but still sequential.
+- **The commented-out `purpose: 'invite'` stays commented out** (issue 3), along with every other
+  defect listed under "What the port did NOT change".
+
+**Verification status: typecheck only.** `npm run typecheck -w match-service` passes clean. Nothing
+here has been exercised at runtime — the stack was already down when these were written, and the
+shutdown path in particular is the kind of change that only proves itself against a real SIGTERM
+with a real in-flight request. Treat all four as unverified until the next rebuild and smoke run,
+and re-check `Shutdown complete` actually appears in the logs on the first `docker compose stop`.

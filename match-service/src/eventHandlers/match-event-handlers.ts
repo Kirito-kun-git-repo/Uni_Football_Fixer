@@ -92,12 +92,16 @@ export function createEventHandlers(logger: Logger) {
        * cast; widening the contract would hide the mismatch instead of recording it.
        * Reported upstream, not patched.
        *
-       * Deliberately not awaited, as in the original — the other two handlers await
-       * their publish. `publishEvent` reaches `channel.publish` synchronously, so the
-       * message is on the wire before the ack either way; the only difference is that
-       * a failure surfaces as an unhandled rejection rather than being logged here.
+       * Now awaited. It was `void publishEvent(...)`, matching the original and the
+       * only unawaited publish in the repo. `publishEvent` reaches `channel.publish`
+       * synchronously so the message made it onto the wire either way, but a
+       * rejection escaped the enclosing try/catch entirely and landed in
+       * `unhandledRejection`, which this service logs without exiting — so a failed
+       * notification publish was logged as a stray rejection rather than as a handler
+       * error, and the message was acked regardless. Awaiting routes the failure into
+       * the catch below, consistent with the other two handlers.
        */
-      void publishEvent('notification', data as unknown as NotificationEvent);
+      await publishEvent('notification', data as unknown as NotificationEvent);
       logger.info('Published notification event for match invite');
     } catch (err) {
       logger.error(`Error while handling team detail event ${err}`);

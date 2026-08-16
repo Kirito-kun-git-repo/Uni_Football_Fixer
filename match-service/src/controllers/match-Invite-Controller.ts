@@ -113,7 +113,11 @@ export function createInviteController(logger: Logger) {
        * branches are preserved exactly as they are, including that asymmetry.
        */
       try {
-        const TIMEOUT_MS = 700; // short timeout for enrichment
+        // Was a hardcoded 700 ms, which had to cover two chained network hops and had
+        // no headroom under load. Now `env.ENRICHMENT_TIMEOUT_MS` (default 2500),
+        // tunable per environment. The two calls still run in parallel, so this is the
+        // wall-clock ceiling for the pair, not per call.
+        const TIMEOUT_MS = env.ENRICHMENT_TIMEOUT_MS;
         const [sRes, rRes] = await Promise.allSettled([
           axios.get<TeamLookupResponse>(
             `${env.GATEWAY_URL}/v1/auth/getTeamById/${senderTeamId}`,
@@ -297,8 +301,9 @@ export function createInviteController(logger: Logger) {
 
       /**
        * D-05 / backlog item 2 — the synchronous half, again, but shaped differently
-       * from `createInvite`'s: sequential rather than parallel, no timeout, and it
-       * publishes WITH `purpose: 'match.fixed'`.
+       * from `createInvite`'s: sequential rather than parallel, and it publishes WITH
+       * `purpose: 'match.fixed'`. It used to carry no timeout either; each call is now
+       * bounded by `env.ENRICHMENT_TIMEOUT_MS`.
        *
        * The inner try/catch swallows a failure per team (pushing a `{teamId}`-only
        * fallback), so the outer catch — and with it the batched async path — almost
@@ -312,8 +317,16 @@ export function createInviteController(logger: Logger) {
 
         for (const { teamId, role } of teamsToEnrich) {
           try {
+            // Previously passed no timeout at all. axios has no default socket
+            // timeout, so a single unresponsive gateway hung this loop — and the HTTP
+            // client waiting on the accept — indefinitely. Bounded per call now.
+            //
+            // Note the remaining exposure: these lookups are still SEQUENTIAL, so the
+            // worst case is (number of teams x ENRICHMENT_TIMEOUT_MS), not one
+            // timeout. Making them concurrent is the rest of issue 9 and is left open.
             const { data } = await axios.get<TeamLookupResponse>(
               `${env.GATEWAY_URL}/v1/auth/getTeamById/${teamId}`,
+              { timeout: env.ENRICHMENT_TIMEOUT_MS },
             );
             enrichedTeams[role] = enrichedTeams[role] || [];
             enrichedTeams[role].push({
