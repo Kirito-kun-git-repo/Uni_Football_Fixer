@@ -108,17 +108,27 @@ stack: `401` without the secret, `200` with it.
 **Do not deploy with `INTERNAL_SECRET` unset.** The services will start and log a warning
 rather than refuse, so the only signal is that warning.
 
-### Still open on this topology
+### What `INTERNAL_SECRET` does NOT cover — and why that is now fine
 
-`GET /v1/auth/getTeamById/:id` returns the full Team document — **including the argon2
-password hash** — and the gateway deliberately does not require a JWT on `/v1/auth`,
-because that is where tokens are issued. So the hash is publicly readable to anyone with
-a team id. `INTERNAL_SECRET` does not close this, because the request legitimately comes
-through the gateway.
+`GET /v1/auth/getTeamById/:id` is still **publicly callable**, and deliberately so. The
+gateway does not require a JWT on `/v1/auth` because that is where tokens are issued, and
+`INTERNAL_SECRET` cannot help: the request arrives legitimately through the gateway.
+Requiring auth on that one route would also break match-service's synchronous enrichment,
+which calls it without a token.
 
-**FIXED** — see D-20. `.select('-password')` on both escape points; `getTeamById` no longer returns
-a `password` field and the hash no longer travels the bus. Verified after the fact with a log
-grep that still finds the pre-fix occurrence, so the zero is meaningful.
+That route used to return the full Team document **including the argon2 password hash**.
+It no longer does (D-20): `.select('-password')` is applied at both escape points — the
+HTTP response and the `TeamDetails` event payload — so the route is still public but
+discloses nothing sensitive.
+
+Verified: `getTeamById` returns `_id, teamName, collegeName, email, role, createdAt,
+updatedAt, __v`; `$argon2id` appears 0 times in match-service's logs after a full smoke
+run, against 1 occurrence historically. The historical hit is what makes the zero
+evidence rather than a grep that never matched anything.
+
+It still returns team **email addresses** to anyone with a team id. That is inherent to
+the route's purpose — match-service needs them for enrichment — but worth knowing if you
+expose this beyond a demo.
 
 ---
 
