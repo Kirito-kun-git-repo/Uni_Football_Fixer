@@ -75,9 +75,10 @@ app.use(ratelimit);
 
 app.use((req, _res, next) => {
   logger.info(`  Recieved ${req.method} Request to  ${req.url}`);
-  // Always prints "[object Object]" — a template literal, not a serialisation.
-  // Preserved verbatim (issue 4): fixing it would start logging plaintext passwords
-  // from /v1/auth/login, so the defect is currently what keeps them out of the logs.
+  // A template literal, not a serialisation: prints "[object Object]" whenever
+  // express.json() parsed a body, and "undefined" for bodyless requests. Preserved
+  // verbatim (issue 4) — serialising it properly would start writing plaintext
+  // passwords from /v1/auth/login into the logs, so the defect is what keeps them out.
   logger.info(`Request Body ${req.body}`);
   next();
 });

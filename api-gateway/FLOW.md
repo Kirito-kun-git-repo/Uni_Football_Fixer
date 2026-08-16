@@ -117,9 +117,10 @@ nothing. It is the only service in the system that is purely synchronous. `@uff/
 - **The rate limiter itself**: still global, still 100 requests per IP per 15 minutes, still applied
   to `/v1/auth/login` with the same budget as everything else (issue 3). Still the only *active*
   limiter in the system.
-- **`logger.info(\`Request Body ${req.body}\`)`**, which has always printed `[object Object]`
-  (issue 4). Preserved verbatim, and worth understanding before anyone "fixes" it: serialising that
-  object would start writing plaintext passwords from `/v1/auth/login` into the logs.
+- **`logger.info(\`Request Body ${req.body}\`)`** (issue 4), which prints `[object Object]` for any
+  request whose JSON body `express.json()` parsed and `undefined` for bodyless ones. Preserved
+  verbatim, and worth understanding before anyone "fixes" it: serialising that object would start
+  writing plaintext passwords from `/v1/auth/login` into the logs.
 - **Proxy errors collapsing to `500`** with the upstream status discarded (issue 5).
 - **`cors()` with no options** — every origin allowed (issue 6, backlog item 6).
 - **Response bodies fully buffered** by `userResDecorator` to log a status code, so large media
