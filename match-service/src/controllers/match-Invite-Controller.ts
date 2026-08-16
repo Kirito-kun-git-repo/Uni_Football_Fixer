@@ -156,7 +156,7 @@ export function createInviteController(logger: Logger) {
           // D-MT-05: `note` is not a schema path, so reading it back off the created
           // document is always undefined and this is always null.
           note: (newInvite as unknown as { note?: string }).note || null,
-          // D-MT-04: neither is `createdAt` — MatchInvite has `sentAt` and no
+          // D-MT-04 (3 of 3): neither is `createdAt` — MatchInvite has `sentAt` and no
           // `timestamps: true` — so this is undefined at runtime and JSON.stringify
           // drops the key from the published message entirely. The shared contract
           // types it as a required string; the cast keeps the runtime value identical
