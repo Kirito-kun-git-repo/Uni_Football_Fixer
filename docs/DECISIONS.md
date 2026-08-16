@@ -137,3 +137,35 @@ conflict impossible.
 through which middleware in what order, into which route, which controller, which model call,
 which event published — and marks which paths the port changed. That is the layer where a broken
 port hides, and nothing previously documented it.
+
+## D-10 — Adopt current dependency majors during the port
+
+**Decision:** The port moves to the latest majors rather than pinning the versions in use today:
+
+| Package | Was | Now |
+|---|---|---|
+| `mongoose` | ^8.17.1 | ^9.9.2 |
+| `ioredis` | ^5.7.0 | ^6.0.0 |
+| `amqplib` | ^0.10.9 | ^2.0.1 |
+| `typescript` | — | ^7.0.2 |
+| `argon2` | ^0.44.0 | ^0.45.1 |
+| `express` | ^5.1.0 | ^5.2.1 |
+
+**Why:** modernization is the stated goal of the project, and doing it in one pass means the four
+Phase 1 agents inherit a single consistent baseline rather than porting against versions that get
+bumped underneath them a week later. `identity-service` is ported first against these versions, so
+any incompatibility surfaces in Phase 0 rather than four times in parallel.
+
+**Concern raised and overruled:** this moves two variables at once. The language changes and the
+ODM's behaviour changes in the same commit, so a smoke-test failure in Phase 2 has two candidate
+causes rather than one. The alternative — port on `mongoose@8x`/`ioredis@5`, then bump majors after
+Phase 2 with the smoke test already in place as a regression net — was considered and rejected in
+favour of a single migration. Recorded here so that if a Phase 2 failure is hard to localise, this
+is the first decision to question.
+
+**Notes discovered while resolving versions:**
+- `amqplib` 2.x ships its own type definitions, so `@types/amqplib` must NOT be installed.
+- `@types/amqplib` is still published at 0.10.8 and would conflict.
+- Verified against amqplib 2.0.1's own `index.d.ts`: `connect()` returns `ChannelModel`,
+  `prefetch`/`close`/`assertQueue` are promise-returning, and `nack(msg, allUpTo, requeue)` is
+  unchanged. The D-05 client design needed no adjustment for the two-major jump.
