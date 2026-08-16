@@ -170,7 +170,12 @@ services:
       EMAIL_APP_PASSWORD: ${EMAIL_APP_PASSWORD:-}
       # Routes mail to the local catcher instead of Gmail. Unset this (and set real
       # EMAIL_* values) to send genuine email; the Gmail transport is unchanged.
-      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      # `${VAR-default}` (no colon) substitutes only when VAR is UNSET. That is
+      # deliberate: it makes an explicitly BLANK `SMTP_HOST=` in .env mean "use the
+      # real Gmail transport", which is what the live test needs. With `:-` an empty
+      # value would fall back to mailpit and every live run would silently deliver
+      # nowhere real.
+      SMTP_HOST: ${SMTP_HOST-mailpit}
       SMTP_PORT: ${SMTP_PORT:-1025}
     depends_on:
       mongo: { condition: service_healthy }

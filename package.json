@@ -18,7 +18,8 @@
     "test": "jest",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "smoke": "node scripts/smoke-test.mjs"
+    "smoke": "node scripts/smoke-test.mjs",
+    "live-test": "node --env-file=.env scripts/live-test.mjs"
   },
   "author": "",
   "license": "ISC",
