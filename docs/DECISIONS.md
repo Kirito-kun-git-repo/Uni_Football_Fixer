@@ -251,6 +251,12 @@ D-05 true across restarts rather than only within a single `up`.
 **Consequence:** `docker compose down -v` is now destructive in a way `down` is not. It is the
 correct way to reset the smoke-test fixtures, and the wrong way to restart the stack.
 
+**Measured, not merely reasoned (D-17).** This entry was written as a precaution. It has since been
+demonstrated: a full `docker compose down` followed by a `--no-build` restart brought all nine named
+durable queues and both exchanges back, restored from `rabbitmq-data`, and the smoke test passed
+19/19 against the recreated containers. Without the volume that restart is exactly the case D-05
+was supposed to have fixed.
+
 ## D-14 — Placeholder credentials in `.env`; whether required-at-boot is right is left open
 
 **Decision:** `.env` ships placeholder values for the five third-party credentials so the stack
@@ -299,6 +305,42 @@ environment variable: CLOUD_NAME` while `CLOUDINARY_CLOUD_NAME` sits right there
 environment. `.env.example` carries an inline note on the `CLOUD_NAME` line for exactly this
 reason. The general rule: when the plan and the code disagree about a name, the code wins.
 
+## D-16 — `ENRICHMENT_TIMEOUT_MS` (default 2500 ms) replaces the hardcoded 700 ms
+
+**Decision:** `match-service`'s enrichment budget is `env.ENRICHMENT_TIMEOUT_MS`, defaulting to
+2500 ms, and it is applied to `respondToInvite`'s per-team lookups as well, which previously had no
+timeout at all. Landed in `42f5f17`.
+
+**This is a behaviour change, not a tuning tweak.** It is recorded here, separately from the other
+three changes in that commit, because it is the only one that alters which code path production
+actually exercises. Every other departure the runtime audits produced either repairs a path that
+was already claimed to work or corrects a comment.
+
+**Why:** 700 ms had to cover two chained network hops in each direction — match → gateway →
+identity → Mongo and back — twice in parallel, on a stack where those hops share a Docker bridge
+with four other services. It had no headroom under load, and it was hardcoded, so the only way to
+give it any was to edit and rebuild.
+
+**Consequence:** when the budget blows, `Promise.allSettled` still means the invite is created and
+a `notification` is still published, just with `teamId`-only teams and no `teamName`, `email` or
+`collegeName`. Raising the budget therefore does not change the failure mode; it changes how often
+production is in it. Fewer degraded notification payloads, and a slower worst-case invite response
+— and in `respondToInvite`, which is sequential, a worst case of `teams × 2500 ms` rather than the
+unbounded hang it replaced. A path that used to be common under load is now rare, which means the
+degraded payload is now the kind of bug that shows up in production and not in testing.
+
+**Correction to the framing this was reported under:** the raise was described to this log as making
+the synchronous path "fail fast into the async fallback" under the old budget and "win far more
+often" under the new one. The first half is not what the code does. `createInvite`'s asynchronous
+fallback runs only if `publishEvent` throws; an enrichment failure reaches it through
+`Promise.allSettled`, which never rejects, so a blown 700 ms budget never reached the fallback and
+never has. The async enrichment path that does run (`fetchTeamDetailsForMatchInviteCreated` →
+`TeamDetailsForMatchInvite`) is the other half of the dual-path duplication, running unconditionally
+and independently of the timeout — not a fallback the timeout triggers. See A-13, and
+`match-service/FLOW.md` issue 6.
+
+**Unverified.** Nothing has been built or run with this change in it. See D-17.
+
 ---
 
 # Phase 2 — what was verified
@@ -341,3 +383,352 @@ same measurement taken at different times, and neither is wrong. Against the cur
 `notification-service` is on `nodemailer@9.0.5` and is clean. The remaining advisory is
 therefore bounded by exactly the code D-02 chose not to migrate, and closing it means either
 porting the monolith or bumping a dependency of code that is not otherwise being touched.
+
+## D-17 — What `verified/smoke-19-of-19` certifies, and what sits above it
+
+**Decision:** the tag `verified/smoke-19-of-19` (`7fd2b02`) is the verification boundary of this
+repository. Everything at or below it has been exercised. Everything above it has not, and must not
+be described as verified in any commit message, report, or handover until it has been rebuilt and
+re-smoked.
+
+**Why this needs its own entry:** the repository currently contains verified and unverified work
+side by side on the same branch, with nothing in the tree to distinguish them. `HEAD` looks more
+finished than it is provable to be. Four of the commits above the tag carry the word `fix` and read
+like improvements; none of them has ever been executed.
+
+**What the tag covers.** `7fd2b02` is the tree the passing smoke test ran against, and it is the
+tree the currently running images were built from. The suite passed `19/19` **twice**:
+
+1. On first bring-up.
+2. Again after a full `docker compose down` and a `--no-build` restart.
+
+The second run is not a repeat of the first. `--no-build` means it ran the same images, so it proves
+nothing new about the code — what it proves is about *state*. Container recreation destroyed and
+recreated every container, and all nine named durable queues and both exchanges came back from the
+`rabbitmq-data` volume. That is the measurement that upgrades D-13 from a reasoned precaution to a
+demonstrated one, and it is the only way that volume's necessity could have been shown.
+
+**What sits above the tag, unexercised.** Six commits. Two are documentation-only (`ba43e99`,
+`6c97b98`). The other four touch `src/`:
+
+| Commit | Service | Reaches runtime? |
+|---|---|---|
+| `4f7531e` | media | yes — `cloudinary.ts`, `server.ts` |
+| `178c69e` | notification | yes — `env.ts`, `mailer.ts` |
+| `405ff63` | api-gateway | no — the `src/server.ts` diff is comments only |
+| `42f5f17` | match | yes — `server.ts`, `env.ts`, controller, event handler (D-16) |
+
+All four typecheck clean under `strict`. **That is the entire extent of the evidence.** No image has
+been built from any of them, no container has run one, and the smoke test has not been executed
+against them. Typecheck-clean is the weakest of the three D-04 layers and is specifically the layer
+that cannot see the things these commits change: a shutdown drain, a mailer that must now boot
+without credentials, and a timeout that only matters under load.
+
+**Named acceptance criterion for the next rebuild** (from the match-service audit, because the
+shutdown drain is the change that can only prove itself against a real SIGTERM with a real in-flight
+request): the first `docker compose stop` after the rebuild must show **`Shutdown complete`** in
+`match-service`'s logs. If it instead shows **`Shutdown exceeded 8000ms, forcing exit`**, then
+`server.closeIdleConnections()` did not do its job and the drain fix is not working — the forced-exit
+timer fired, which is the failure path, not the success path. Do not read the clean container exit as
+success on its own; the forced exit also produces one.
+
+**Consequence:** the tag must be moved only by a run that reproduces the evidence above, and moving
+it is the act that makes the four commits verified. Until then, `git log verified/smoke-19-of-19..HEAD`
+is the authoritative list of what is unproven.
+
+### SUPERSEDED — the boundary has moved twice since this entry was written
+
+This entry's *rule* stands unchanged; only the tag it names is stale. Recorded rather than edited,
+because the rule was written before either move and its authority comes from having predicted them.
+
+1. **`verified/smoke-19-of-19` → `5e19435`.** The four commits above were rebuilt and re-smoked:
+   19/19, and the shutdown criterion passed — `Shutdown complete` in match-service's log in
+   **0.19 s**, not the forced-exit path. `closeIdleConnections()` did its job, with the gateway
+   holding live keep-alive sockets from a completed smoke run.
+2. **`verified/smoke-21-of-21` → `add9416`** is now the boundary (see D-19). Two assertions were
+   added, so the suite name changed with it.
+
+Read the rule as: *the newest `verified/smoke-*` tag is the boundary, and
+`git log <that tag>..HEAD` is the authoritative list of what is unproven.* At the time of writing
+that range is empty.
+
+---
+
+# Post-audit fixes
+
+## D-19 — Invite emails: fixed in the order A-13 mandates, and delivery made provable
+
+**Decision:** executed step 1 of A-13 — reconcile the consumer, then make the sync path reachable —
+and added a local SMTP sink so that "an email was sent" became an assertion rather than a claim.
+
+**Why now:** it was the user's explicit request, and A-13 already contained the safe ordering.
+
+**The three stacked defects.** None alone explains the symptom; each hid the next.
+
+1. `notification-service`'s `handleInvite` destructured `{ hostTeam, acceptedTeam }` from a payload
+   carrying `{ sender, receiver }`. Both were `undefined` on every invite, so the send threw.
+2. `createInvite` published without `purpose`, so `notification-service`'s `switch` dropped the
+   event on its `default:` branch and the handler above was never reached at all.
+3. `sendMail`'s delivery-audit write could not satisfy the schema — `recipientTeamId` and `type` are
+   required and no caller supplied them — so `Notification.create()` rejected *after* the mail had
+   already gone out. Every successful send was reported as a failure.
+
+**Order was load-bearing, exactly as A-13 predicted.** Fixing (2) first — the one-line change, the
+obvious one — would have made a cold path hot and crashed it on `hostTeam.email` for every invite.
+The consumer was fixed first; only then was `purpose: 'invite'` uncommented.
+
+**Role mapping**, taken from the template's own wording rather than the variable names:
+`receiver` → the team hosting the match, and the recipient; `sender` → the challenger, named in the
+body. The old names had it inverted relative to the payload, which is why nothing lined up.
+
+**Defect 3 had a second victim, and it was measured.** The runtime audit recorded that a
+`match.fixed` event owing two emails produced exactly one send — the rejected audit write aborted
+the rest. With the write made conditional and isolated in its own try/catch, both now arrive.
+Bookkeeping must not be able to un-send an email. The `notifications` collection, empty in
+production since it was created, now holds real rows.
+
+**Verification — the part that matters.** `docker-compose.yml` gained a Mailpit SMTP sink and the
+mailer gained an `SMTP_HOST` override; the Gmail transport is unchanged when it is unset. Before
+this, notification-service's only purpose was unverifiable on any machine without a Google app
+password, which is a large part of why these defects survived a full port and an audit.
+
+The smoke test asserts two things, and the second is the one with teeth: the email is **delivered**,
+and its body **names the challenging team**. A swapped mapping still delivers an email — delivery
+alone is not evidence of correctness. 21/21; tag `verified/smoke-21-of-21` at `add9416`.
+
+**What was deliberately NOT fixed:** step 2 of A-13. The asynchronous fallback remains unreachable,
+and it still publishes a third payload shape carrying only the receiver's details with no sender at
+all, so it cannot name the challenger even if reached. Making it reachable now would surface that
+third shape. A-13 stays open on its second half; see the status note there.
+
+---
+
+# Deferred backlog
+
+## D-18 — The backlog is the audited ranking, under its own ID space
+
+**Decision:** the backlog below replaces the one written before anything ran. It is ranked by the
+four runtime audits, carries an owner per item, and is numbered `A-1` … `A-13` — a new ID space,
+not a renumbering of the old one.
+
+**Why the backlog lives here now:** it never did. The implementation plan's Task 18 Step 3 specified
+appending a fifteen-item list to this file, and that step was never executed. The list exists only
+as a *proposed* markdown block inside
+`docs/superpowers/plans/2026-08-16-typescript-migration.md`, and an earlier eleven-item version sits
+in §8 of the design spec. So this section is an addition, not an edit — which also means nobody has
+ever been reading the backlog from the place the code's comments point at.
+
+**Why a new ID space rather than reusing 1–15:** twenty-nine comments across the five services and
+`packages/shared` cite `backlog item N`. Renumbering would silently re-point every one of them —
+the comments would still parse, still read sensibly, and mean something else. Worse, those citations
+already do not agree on which list they mean: `notification-service/src/utils/mailer.ts:36` cites
+"backlog item 9" for the missing SMTP retry, but item 9 in the plan's list is log rotation;
+`identity-service/src/server.ts:114` cites "Backlog item 12 **in the architecture docs**", which is
+a third numbering space entirely (`docs/architecture/0N-*.md` each carry their own issue table).
+There are at least three live numbering spaces and the code's citations are split across them. A
+distinct prefix is the only change that cannot make that worse.
+
+**Consequence:** `backlog item N` in a source comment refers to the old plan list, whose numbers are
+frozen and no longer maintained. `A-N` refers to this list. Anything touching those comments should
+convert them, one file at a time, rather than in a sweep — a sweep would have to guess which of the
+three spaces each citation meant, and several of them are already wrong.
+
+---
+
+### The audited backlog
+
+Ranked by severity, from the four runtime audits against the live stack. Owner in brackets.
+
+**A-1 — HIGH — The argon2 password hash is exposed unauthenticated on the public port.**
+[identity + gateway]
+`GET /v1/auth/getTeamById/:id` returns the full Team document, hash included, on published port
+3000 with **no authentication** — not merely inside the compose network. The gateway does not apply
+`validateToken` to `/v1/auth`, deliberately and correctly, because that is where tokens are issued
+and requiring one would make login unreachable; the side effect is that every route under that
+prefix is public. Confirmed by curl from the host: an unauthenticated
+`GET /v1/auth/getTeamById/<id>` reaches identity-service and answers `404` (team not found), while
+`GET /v1/match/...` answers `401`. The same document also travels the bus — `handleTeamDetailEvent`
+publishes it whole as `TeamDetails` — and consumers log the payload verbatim, so the hash lands in
+match-service's stdout as well. Three exposures, one root cause: identity-service has no projection.
+Fix it there. Redacting the consumer's log line leaves the hash on the bus and at the public edge.
+
+**A-2 — HIGH — There is no RabbitMQ reconnect, and `/health` cannot see that.** [packages/shared]
+`connection.on('close')` logs a warning and does nothing else. The module-level `channel` stays
+non-null, so `requireChannel()` keeps handing out a dead channel: publishes throw, consumers are
+gone, and both stay that way for the lifetime of the process. Every service's `/health` reads only
+`mongoose.connection.readyState`, so the container reports `healthy` while every event path is mute
+— and because the process never exits, `restart: unless-stopped` never fires either. Nothing in the
+system can currently observe this state. Argues for two changes together: a reconnect path, and a
+readiness/liveness split so that "Mongo is up" stops being allowed to stand in for "this service can
+do its job".
+
+**A-3 — HIGH — `trust proxy` is set with nothing in front of the gateway.** [gateway]
+`app.set('trust proxy', 1)` with no proxy, load balancer, or ingress ahead of it means `req.ip` is
+whatever the client puts in `X-Forwarded-For`. Any client can mint itself a fresh rate-limit bucket,
+and rotating the header bypasses the limiter entirely. Verified live: a request carrying
+`X-Forwarded-For: 203.0.113.99` created the Redis key `rl:203.0.113.99`. This is the **only active
+limiter in the system** — the other four services' limiters are commented out — so it is not one
+defence among several. Note this was originally filed as a middleware-ordering nit; the ordering is
+in fact harmless, and the real defect is worse than the one that was filed.
+
+**A-4 — HIGH — match-service's enrichment spends the public rate-limit budget.** [gateway + match]
+`match-service` calls `GET /v1/auth/getTeamById/:id` at three sites through `GATEWAY_URL`, so its
+inward enrichment re-enters the public edge and shares the same 100-per-15-minutes bucket as real
+clients. Visible in Redis as the `rl:172.19.0.7` counter. Roughly 50 invite operations exhaust it
+cluster-wide; identity then returns 429, `Promise.allSettled` swallows it, and the notification is
+published with `teamId`-only teams. The system degrades notification quality under load, silently,
+and the degradation gets worse exactly when traffic is highest. D-16 makes this rarer; it does not
+address it.
+
+**A-5 — MED — Shutdown does not drain in-flight messages, and D-05 changed what that costs.**
+[shared + notification]
+`closeRabbitMQ()` closes the channel without waiting for in-flight handlers, so unacked messages are
+requeued. Recorded honestly: **D-05's durable queues converted silent message LOSS into silent
+message DUPLICATION on redeploy.** Before D-05 a severed channel lost the message; now it is
+redelivered, and there is no idempotency key anywhere, so `notification-service` sends the email
+twice. That is a better failure mode than losing it, and it is still a defect — and it was not
+flagged when D-05 was proposed. D-05's recorded consequences covered backlog accumulation and disk
+usage, not redelivery. Fixing this needs both halves: drain before closing, and a dedupe key so a
+redelivery that does happen is harmless.
+
+**A-6 — MED — SMTP is synchronous in the handler, with no retry and no backoff.** [notification]
+The send happens inline inside the event handler. A failure is logged, the message is acked, and it
+is gone — no retry, no backoff, no bounce handling, and no dead-lettering either, because the
+handler catches its own error and so the shared client never sees a throw (see the retirement of old
+item 14, below). A Gmail outage therefore discards every notification raised during it, silently and
+permanently. The natural fix — an outbound queue with retry — is the
+same work as A-5's idempotency key and should be scoped with it.
+
+**A-7 — MED — Cloudinary is called before the Mongo write, so failures orphan assets.** [media]
+`uploadMediaToCloudinary()` runs at `media-controller.ts:44` and `newlyCreatedMedia.save()` at line
+63. A `save()` failure — validation, a Mongo blip, a duplicate key — leaves an uploaded asset in
+Cloudinary that no record points at and no code path ever deletes. It accumulates, it costs money,
+and nothing in the system can enumerate the orphans after the fact. Either reverse the order or
+delete on the failure path.
+
+**A-8 — MED — `publishEvent` is fire-and-forget on a non-confirm channel.** [shared + media]
+The channel comes from `createChannel()`, not `createConfirmChannel()`, and `ch.publish()`'s return
+value is discarded. `publishEvent` is declared `async` but awaits nothing, so awaiting it proves
+only that the bytes were handed to the socket buffer. A `201` response is therefore not evidence
+that the event was delivered — it is evidence that the write did not throw synchronously. Every
+"created and notified" flow in the system rests on this.
+
+**A-9 — MED — The gateway's `/health` returns 503 on Redis loss, although routing still works.**
+[gateway]
+Redis backs the rate-limit counters and nothing else; the gateway owns no data and the proxies are
+stateless, so losing Redis degrades rate limiting and leaves routing entirely intact. Reporting 503
+means anything gating on `service_healthy` — compose `depends_on`, an orchestrator, a load balancer
+— pulls a working gateway out of rotation over a subsystem that does not affect its ability to serve.
+The same readiness/liveness split A-2 needs would resolve this too, from the opposite direction.
+
+**A-10 — MED — No forced-exit timer and no `stop_grace_period`.** [all]
+`server.close()` stops accepting new connections but does **not** close idle keep-alive connections,
+so a shutdown can sit waiting on a socket that will never send another request. With no
+`stop_grace_period` in `docker-compose.yml`, Docker's 10-second default applies and then SIGKILL
+lands — potentially mid-flight through a large buffered response. `match-service` alone now has the
+fix (`closeIdleConnections()` under an 8-second deadline, `42f5f17`, unverified per D-17); the other
+four do not. Whatever `match-service` proves at the next rebuild is the pattern to copy.
+
+**A-11 — MED — The media upload path has never been exercised, anywhere.** [media + test]
+`.env` carries placeholder Cloudinary credentials (D-14), and `scripts/smoke-test.mjs:184` records
+explicitly that upload is not covered because it needs real ones. So `media-service`'s only write
+path and only event publish have never succeeded in any environment — not in CI, not locally, not
+in the smoke run behind the tag. Every claim about that path is a claim about code that has been
+read and typechecked, and nothing more. Note the interaction: this is also the one path A-7 and A-8
+both live on.
+
+**A-12 — LOW — `/health` logging buries everything else.** [all]
+The request logger runs before `/health` and does not skip it. At the compose health-check's 10-second
+interval that is roughly 17k lines per service per day of pure noise, which is what makes a real
+event hard to find at the moment someone needs to find one. Skip `/health` in the request logger, or
+drop it to `debug`.
+
+**A-13 — MED — Dual-path enrichment: fix the consumer payload FIRST, then the reachability.**
+[match + notification]
+
+**This is one item with a mandatory internal order. It is not two tickets. Do not split it, and do
+not take the second half alone because it looks like a one-line change — it is the half that breaks
+production.**
+
+The situation: `createInvite`'s asynchronous fallback is unreachable in practice. It runs only if
+`publishEvent` throws, and the enrichment failure it was written to catch arrives via
+`Promise.allSettled`, which never rejects. So an enrichment failure never takes the fallback; it
+silently publishes a `notification` carrying `teamId`-only teams. That is the silent degradation
+A-4 and D-16 both describe.
+
+Making the fallback reachable is a small change. It is also the wrong first move, because the
+fallback publishes a team projection that `notification-service` throws on:
+`handleInvite` destructures `hostTeam` and `acceptedTeam` from a payload that carries `sender` and
+`receiver`, so `hostTeam` is always `undefined` and `inviteTemplate(hostTeam, acceptedTeam)` throws
+on `hostTeam.teamName`. That path is currently cold, which is the only reason it is not visible.
+
+Therefore, in this order:
+
+1. **Fix the consumer.** Reconcile `notification-service`'s `handleInvite` with the payload
+   match-service actually publishes — including the commented-out `purpose: 'invite'`, whose absence
+   sends the sync path to the `default` branch. The consumer must be able to survive the fallback's
+   payload before anything starts sending it one.
+2. **Then make the fallback reachable.** Have enrichment failure actually reach the catch, rather
+   than being absorbed by `allSettled`.
+
+Doing 2 before 1 takes a silent degradation — a notification with missing team names — and converts
+it into a downstream crash on a path that currently never runs. That is **strictly worse than the
+bug being fixed**, and it would be caused by the fix, which makes it the kind of regression that is
+hard to attribute. Step 1 alone is safe and improves nothing observable; step 2 alone is unsafe.
+Only 1-then-2 is correct.
+
+> **STATUS — step 1 DONE (`add9416`, D-19). Step 2 still open.**
+>
+> The consumer now reads `{ sender, receiver }`, `purpose: 'invite'` is uncommented, and invite
+> emails are delivered and asserted end to end (21/21). One correction to the analysis above, which
+> was right about the ordering and wrong about one detail: `handleInvite` threw on
+> `hostTeam.email`, not on `hostTeam.teamName` — the template call was reached with `undefined`
+> arguments and the destructured read failed first. Immaterial to the conclusion.
+>
+> **Step 2 has grown a third blocker.** The fallback publishes neither the sync shape nor the
+> match-fixed shape: it forwards the `TeamDetailsForMatchInvite` projection — receiver details only,
+> **no sender at all** — plus a `purpose`. So even a reachable, non-crashing fallback cannot name
+> the challenging team, and the email it produced would be strictly worse than the sync one. Step 2
+> now requires carrying `senderTeamId` through `fetchTeamDetailsForMatchInviteCreated`, which is a
+> change to the shared event contract and to identity-service's handler — not a match-service
+> change. Re-scope before picking it up.
+
+---
+
+### Carried forward from the pre-runtime backlog
+
+These are not superseded — the audits simply did not revisit them, because they are design gaps
+rather than runtime behaviour. They keep their **original numbers** so that the `backlog item N`
+comments in the source, and D-12's reference to "backlog item 1", still resolve. Read them against
+the plan's list, not against `A-N`.
+
+| Old # | Item | Still open |
+|---|---|---|
+| 1 | Downstream services trust `x-team-id` unconditionally | yes — bounded only by D-12 not publishing their ports |
+| 2 | Dual-path enrichment, divergent payload shapes | yes — the actionable part is now **A-13** |
+| 3 | No service discovery; gateway targets are env vars | yes |
+| 4 | `Team.role` never enters the JWT and is never checked | yes |
+| 5 | JWT `name` claim always `undefined` (model field is `teamName`) | yes |
+| 6 | Wide-open CORS in every service | yes |
+| 7 | Rate limiting disabled in four of five services | yes — and it is why **A-3** has no backstop |
+| 8 | No tracing or correlation-ID propagation | yes |
+| 9 | No central log store or rotation | yes — compounded by **A-12** |
+| 10 | No per-service unit or integration suites | yes — the accepted cost of D-04 |
+| 11 | No CI pipeline | yes |
+| 13 | Inconsistent routing-key naming (Pascal, camel, dot.case) | yes |
+| 15 | Legacy monolith `/src` on Express 4, unported | yes — deliberate, D-02 |
+
+**Old item 12 and old item 14 are retired**, and neither was accurate as written:
+
+- **Old 12** said the argon2 hash leaks onto the event bus and over HTTP. Both true, but it
+  understated the exposure: it is served **unauthenticated on the published public port**, which is
+  the fact that sets the severity. Restated as **A-1**.
+- **Old 14** said the dead-letter queue is unreachable because handlers swallow their own errors.
+  Too absolute, and wrong as stated. In `packages/shared/src/rabbitmq.ts` the `JSON.parse` runs
+  *inside* the try and *before* `await handler(payload)`, so a malformed message body does throw
+  there and does `nack(msg, false, false)` to the DLX. The accurate statement: **handler-thrown
+  errors never reach the DLQ**, because each handler's own try/catch swallows them before the shared
+  client can see them — **malformed JSON does reach it.** So `football.dlq` is a working poison-message
+  path and a non-existent handler-failure path, and reading "0 messages" on it means only that
+  nothing malformed has arrived. It is not evidence that no handler has failed. This is what makes
+  A-6's silent discard invisible.
