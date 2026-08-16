@@ -222,11 +222,24 @@ ordering nit — the previous framing understated it.
 - `SIGTERM`/`SIGINT` graceful shutdown added — did not previously exist. Exits from inside the
   `server.close` callback so in-flight proxied responses finish (D-GW-10).
 
-  **Not exercised at runtime.** Triggering it means stopping the container, which this audit did not
-  do. What was verified instead is that the signal can reach the handler at all: `node` runs as
-  **PID 1** in the container (`CMD` is exec-form, so there is no shell swallowing the signal), and
-  both handlers are registered before `startServer()` returns. What remains untested is the drain
-  itself, and there are two edges worth knowing before anyone relies on it:
+  **Verified at runtime.** The signal reaches the handler — `node` runs as **PID 1** in the
+  container (`CMD` is exec-form, so no shell swallows the signal) — and the drain completes. The
+  teardown of the audited stack is the evidence:
+
+  ```
+  $ docker events --filter event=kill --format '{{.Actor.Attributes.name}} signal={{...}}'
+  1786897220 uni_football_fixer-api-gateway-1 signal=15
+  $ docker events --filter event=die  --format '{{.Actor.Attributes.name}} exitCode={{...}}'
+  1786897220 uni_football_fixer-api-gateway-1 exitCode=0
+  ```
+
+  `SIGTERM` in, `exitCode=0` out, within the same second. That exit code can only come from the
+  `process.exit(0)` inside the `server.close()` callback: had the handler not run or not completed,
+  Docker would have waited out the full grace period and killed it, and the die event would read
+  `exitCode=137`. The shutdown path works.
+
+  Two edges still bound it, neither disproved by the above — the drain was fast because the gateway
+  was idle at teardown:
 
   - `server.close()` waits for existing connections rather than closing idle ones. Responses carry
     `Keep-Alive: timeout=5`, so an idle client connection holds shutdown open for up to 5s.
