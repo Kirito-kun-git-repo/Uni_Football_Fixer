@@ -1,0 +1,165 @@
+# Render blueprint — five services, all as free Web Services.
+#
+# Validate against Render's current Blueprint reference before the first deploy; their
+# schema moves, and this was written against what the docs said at authoring time.
+#
+# WHY ALL FIVE ARE WEB SERVICES
+# Render's free tier covers Web Services only — Private Services and Background Workers
+# are paid. notification-service has no business HTTP API, but the migration gave every
+# service a `/health` endpoint and a bound port, so it can legitimately run as one.
+#
+# WHAT THAT COSTS, AND WHAT COMPENSATES
+# Every service gets a public URL, so `x-team-id` alone would be a one-curl
+# impersonation of any team. INTERNAL_SECRET closes that: the gateway injects
+# `x-internal-secret` on every proxied request and the downstream services reject
+# anything without it. Do NOT deploy this blueprint with INTERNAL_SECRET unset.
+#
+# READ docs/RENDER-DEPLOY.md FIRST — three free-tier behaviours will bite you,
+# especially notification-service sleeping and never waking on its own.
+
+services:
+  # ---------------------------------------------------------------- public edge
+  - type: web
+    name: uff-api-gateway
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./api-gateway/Dockerfile
+    dockerContext: .          # the workspace root — packages/shared must be in context
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Generated once here; every other service references THIS value below, so the
+      # five stay in sync automatically and the secret never appears in the repo.
+      - key: JWT_SECRET
+        generateValue: true
+      - key: INTERNAL_SECRET
+        generateValue: true
+      - key: REDIS_URL
+        sync: false           # set in the dashboard
+      # Full https:// URLs of the three services below. Render cannot interpolate a
+      # scheme onto `fromService`, so these are set by hand after the first deploy.
+      - key: IDENTITY_SERVICE_URL
+        sync: false           # https://uff-identity-service.onrender.com
+      - key: MEDIA_SERVICE_URL
+        sync: false           # https://uff-media-service.onrender.com
+      - key: MATCH_SERVICE_URL
+        sync: false           # https://uff-match-service.onrender.com
+
+  # ---------------------------------------------------------------- identity
+  - type: web
+    name: uff-identity-service
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./identity-service/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        fromService: { type: web, name: uff-api-gateway, envVarKey: JWT_SECRET }
+      - key: INTERNAL_SECRET
+        fromService: { type: web, name: uff-api-gateway, envVarKey: INTERNAL_SECRET }
+      - key: MONGODB_URL
+        sync: false           # MongoDB Atlas free M0
+      - key: REDIS_URL
+        sync: false
+      - key: RABBITMQ_URL
+        sync: false           # CloudAMQP free "Little Lemur"
+
+  # ---------------------------------------------------------------- media
+  - type: web
+    name: uff-media-service
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./media-service/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: INTERNAL_SECRET
+        fromService: { type: web, name: uff-api-gateway, envVarKey: INTERNAL_SECRET }
+      - key: MONGODB_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: RABBITMQ_URL
+        sync: false
+      - key: CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+
+  # ---------------------------------------------------------------- match
+  - type: web
+    name: uff-match-service
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./match-service/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: INTERNAL_SECRET
+        fromService: { type: web, name: uff-api-gateway, envVarKey: INTERNAL_SECRET }
+      - key: MONGODB_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: RABBITMQ_URL
+        sync: false
+      # match-service calls BACK through the gateway for synchronous enrichment.
+      - key: GATEWAY_URL
+        fromService: { type: web, name: uff-api-gateway, property: host }
+      # Raised from the 2500 ms default (D-16). On a free tier identity-service may be
+      # asleep, and a cold start is tens of seconds — the default would expire during
+      # every post-idle invite and drop to the async fallback, which cannot name the
+      # challenging team (A-13 step 2). This is the single most important free-tier
+      # tuning value in the blueprint.
+      - key: ENRICHMENT_TIMEOUT_MS
+        value: "60000"
+
+  # ---------------------------------------------------------------- notification
+  # A pure RabbitMQ consumer running as a Web Service, because Background Workers are
+  # paid. It exposes only /health over HTTP.
+  #
+  # CRITICAL: a free Web Service sleeps after ~15 minutes without HTTP traffic, and
+  # nothing ever sends this one any. Asleep it stops consuming, so no email goes out.
+  # Events are NOT lost — the queues are durable (D-05) and drain once it wakes — but
+  # you MUST point an external uptime pinger at its /health. See docs/RENDER-DEPLOY.md.
+  - type: web
+    name: uff-notification-service
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./notification-service/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: INTERNAL_SECRET
+        fromService: { type: web, name: uff-api-gateway, envVarKey: INTERNAL_SECRET }
+      - key: MONGODB_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: RABBITMQ_URL
+        sync: false
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_APP_PASSWORD
+        sync: false
+      # MUST be absent or empty in production, or mail goes to a Mailpit that is not
+      # deployed here and every notification silently vanishes.
+      - key: SMTP_HOST
+        value: ""
