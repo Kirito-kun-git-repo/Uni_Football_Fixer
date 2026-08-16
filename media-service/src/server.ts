@@ -21,7 +21,11 @@ app.use(helmet());
 app.use(express.json());
 app.use((req, _res, next) => {
   logger.info(`  Recieved ${req.method} Request to  ${req.url}`);
-  // Interpolating an object yields "[object Object]". Preserved; see D-MD-07.
+  // Preserved; see D-MD-07. In practice this always prints "Request Body undefined": Express 5
+  // leaves `req.body` undefined unless a parser populated it, and neither route feeds
+  // `express.json()` — `/get` has no body and `/upload-logo` is multipart, which multer parses
+  // only after this middleware has run. The "[object Object]" form the original was written
+  // against needs a JSON-bodied route, and this service has none.
   logger.info(`Request Body ${req.body}`);
   next();
 });

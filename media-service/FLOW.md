@@ -18,7 +18,11 @@ a Cloudinary 401 on the first upload hours later (D-MD-03).
    **This order is the reverse of identity-service's** (`helmet` → `cors`). Preserved from the
    original; the practical difference is which of the two writes its headers first.
 3. `GET /health` registered — reports `mongoose.connection.readyState`. Registered *before* the
-   `/api/media` prefix, so an orchestrator's probe can never be rate-limited.
+   `/api/media` prefix, so an orchestrator's probe can never be rate-limited. It is **not** free of
+   middleware, though: the four `app.use` calls in step 2 are global, so every probe runs through
+   `cors` → `helmet` → `express.json` → request logger and writes two log lines. At the compose
+   health-check's 10 s interval that is ~17k lines/day of pure noise, and it is the reason the
+   service's log is almost entirely `/health` traffic (see *Observed runtime behaviour*).
 4. Redis client constructed, then **connected with a top-level await** (D-MD-08). This has to
    happen before step 5: `rateLimit()` initialises its store during construction and
    `rate-limit-redis` caches that one attempt forever, so a not-yet-connected client leaves the
@@ -32,7 +36,25 @@ a Cloudinary 401 on the first upload hours later (D-MD-03).
 
 The listener starts last on purpose: the container never accepts traffic it cannot service.
 
-9. `SIGTERM`/`SIGINT` → `shutdown()`: stop accepting → close RabbitMQ → close Mongo → close Redis.
+9. `SIGTERM`/`SIGINT` → `shutdown()`: stop accepting → close RabbitMQ → close Mongo → close Redis
+   → `process.exit(0)`.
+
+   Two caveats that the phrase "graceful shutdown" oversells, both confirmed by reading the
+   registration site rather than the intent:
+
+   - **In-flight requests are not drained.** `server.close(cb)` is called but its callback is never
+     awaited — it only stops *new* connections. The three `await`s that follow, and the
+     `process.exit(0)` after them, run while an upload may still be mid-Cloudinary. That upload then
+     fails on `save()` or `publishEvent` against an already-closed handle. Draining would require
+     awaiting `server.close` (promisified) *before* closing the bus and datastores.
+   - **The handlers are registered inside `startServer()`, after Mongo and RabbitMQ connect** — not
+     at module scope. Between process start and that point, `SIGTERM` gets Node's default handling
+     and kills the process outright. The window is ~150 ms in the healthy case observed below, but
+     it is unbounded if Mongo is slow, which is exactly when a `docker compose stop` is likely.
+
+   There is also no timeout guard: if `closeRabbitMQ()` hangs, nothing forces the exit and Docker
+   waits out its 10 s grace period before `SIGKILL`. And `shutdown` is not idempotent — a second
+   signal starts a second concurrent teardown.
 
 Constructing the router at step 6 is what builds the whole object graph:
 `createMediaRouter` → `createMediaController` → `createCloudinaryClient`, which is where
@@ -48,7 +70,7 @@ verified the JWT and injected `x-team-id`; this service verifies nothing and tru
 |---|---|---|---|
 | `POST /api/media/upload-logo` | limiter → `authenticateRequest` → multer wrapper | `uploadMedia` | `uploadMediaToCloudinary` → `new Media().save()` → `publishEvent('profilePhoto.updated')` → `201` |
 | `GET /api/media/get` | limiter → `authenticateRequest` | `getAllMedia` | `Media.find({})` → `200 { Result: [...] }` |
-| `GET /health` | none | — | `mongoose.connection.readyState` |
+| `GET /health` | the four global `app.use`s only — no auth, no limiter | — | `mongoose.connection.readyState` |
 
 ### The multer wrapper
 
@@ -125,10 +147,92 @@ downstream write.
 - **No file-type validation.** Any mimetype is accepted; Cloudinary sniffs it. Issue 3.
 - **Old media is never deleted.** A team uploading N logos leaves N−1 orphans in Cloudinary and
   Mongo. `deleteMediaFromCloudinary` still exists and is still called by nobody. Issue 4.
-- **The three log defects** — `public_Id`, `console.log(req.file)`, and `Request Body [object
-  Object]`. Reproduced deliberately; D-MD-07.
+- **The three log defects** — `public_Id`, `console.log(req.file)`, and the `Request Body` line.
+  Reproduced deliberately; D-MD-07. Note the third one does **not** actually print `[object Object]`
+  on either real route, which is what this document previously claimed: Express 5 leaves `req.body`
+  `undefined` unless a body parser populated it, and neither route gives `express.json()` anything to
+  parse — `GET /get` has no body, and `POST /upload-logo` is `multipart/form-data`, which
+  `express.json()` skips and multer parses *after* the logger has already run. Every observed line is
+  `Request Body undefined`. The `[object Object]` form needs a JSON-bodied request, and this service
+  has no route that takes one.
 - **The capitalised `Result` key** in `GET /get`'s response body, and `Recieved` in the request log.
 - **`unhandledRejection` logs without exiting.**
 - **`cors()` wide open**, in this service as in the other four. Backlog item 6.
 - **No index on `teamId`**, so any future per-team lookup scans the collection. Issue 10.
 - **`redis` rather than `ioredis`** — deliberate, and the reason is D-MD-01, not inertia.
+
+## Observed runtime behaviour
+
+Audited against the live `uni_football_fixer` stack. Everything above this section was written from
+the source; this section is what the running container actually did.
+
+### Confirmed as documented
+
+- **Startup order.** The log emits `Connected to Redis` → `Connected to MongoDB` → `Connected to
+  RabbitMQ` → `Media service is running on port 3003`, in that order, spanning 130 ms. Redis first,
+  listener last, exactly as steps 4–8 claim.
+- **`/health`** returns `200 {"service":"media-service","status":"ok","mongo":1}`.
+- **Route behaviour**, probed from inside the container: `GET /get` without `x-team-id` → 401;
+  with it → `200 {"Result":[]}`; `POST /upload-logo` without the header → 401; with the header but
+  no file → `400 {"message":"No file uploaded"}` (the wrapper's third branch, so `uploadMedia`'s own
+  `!mediaFile` guard is indeed unreachable).
+- **The rate limiter is genuinely live in Redis.** `RateLimit-Remaining` decremented 49 → 46 across
+  four consecutive requests, which is the thing D-MD-08 exists to guarantee — had the store
+  initialised against a disconnected client, every one of these would have thrown instead.
+- **Publisher-only.** RabbitMQ shows four connections for five services (no consumer channel here),
+  and media-service owns no queue. `identity.profilePhoto.updated` exists, is durable, and has 1
+  consumer bound to `profilePhoto.updated` on `football.events` — the contract in *Event paths*
+  holds on the broker side.
+- **The `ObjectId` cast is safe in practice.** Issue 2 warns that `Media.teamId` is an `ObjectId`
+  while other services use strings, which would make every upload a `CastError`. It does not:
+  identity-service's `Team._id` *is* an `ObjectId`, so the `x-team-id` header is always a 24-hex
+  string and casts cleanly. The type mismatch is a modelling wart, not a live fault.
+
+### Not verified, and cannot be from inside this stack
+
+`CLOUD_NAME`/`CLOUDINARY_API_KEY`/`CLOUDINARY_API_SECRET` are all the literal string `placeholder`,
+and `scripts/smoke-test.mjs` says outright that upload is "NOT covered: it requires real Cloudinary
+credentials". So **the entire write path is unexercised end-to-end** — Cloudinary upload, the
+`Media` row, the `profilePhoto.updated` publish, and identity-service's `Team.logoUrl` write. A real
+multipart upload during this audit reached Cloudinary and came back `401 Invalid api_key
+placeholder`, returning a clean `500 {"message":"Internal Server Error"}` in 786 ms with no crash and
+no partial row. That confirms the failure path only. The success path past `uploadMediaToCloudinary`
+has never run anywhere.
+
+### Fixed during the audit
+
+**Cloudinary errors erased their own log context.** The SDK rejects with a plain object literal
+(`{ message, name, http_code }`), not an `Error`. Winston merges a plain-object second argument into
+the log meta, and its `message` key then *overrides* the message given as the first argument — so
+both `logger.error('Error while Uploading media to Cloudinary:', error)` and the controller's
+`logger.error('Error uploading media:', error)` emitted the identical line `Invalid api_key
+placeholder`, twice, with no way to tell which frame produced either and no stack (`format.errors({
+stack: true })` only fires for real `Error`s). `normaliseCloudinaryError` in `utils/cloudinary.ts`
+now converts it to a real `Error`, carrying `name` and `http_code` across. Log shape only — the
+rejection still lands in the same catch and the client still gets the same 500.
+
+Note this is a *shared-logger* hazard, not a Cloudinary one: `logger.error('prefix:', x)` silently
+loses `prefix` for **any** non-`Error` `x` carrying a `message` key, in every service. Fixing it
+generally belongs in `packages/shared/src/logger.ts`, which is out of scope for this directory.
+
+### Works, but fragile
+
+1. **`/health` only checks Mongo.** If RabbitMQ or Redis dies, `readyState` is still 1, the endpoint
+   still returns 200, the container stays `healthy`, and api-gateway keeps routing traffic here —
+   while every upload 500s at `publishEvent` and every `/api/media` request 500s in the limiter.
+   Widening the check is not free, though: api-gateway has `depends_on: media-service:
+   service_healthy`, so a stricter probe makes a Redis blip cascade into a gateway restart.
+2. **There is no RabbitMQ reconnect.** The shared client logs `RabbitMQ connection closed` on
+   `close` and does nothing else. After a broker restart the channel is dead for the life of the
+   process, and `requireChannel()` throws on every subsequent upload. Nothing recovers without a
+   container restart.
+3. **A failed publish still leaves committed state.** `publishEvent` runs *after* `save()`, so when
+   the bus is down the client gets a 500 while the Cloudinary asset and the `Media` row both persist
+   — and identity-service never learns. A retrying client duplicates both. The 201 is also not proof
+   of delivery in the healthy case: `ch.publish` is fire-and-forget on a non-confirm channel, so it
+   returns before the broker has accepted anything.
+4. **Cloudinary is called before Mongo.** Any `save()` failure — the `unique` index on `publicId`,
+   a validation error — orphans an asset that nothing will ever delete. `deleteMediaFromCloudinary`
+   is the compensating action and is still called by nobody (issue 4).
+5. **`/health` dominates the log.** Two `info` lines per probe every 10 s, so real events are
+   needles in ~17k lines/day. The request logger should skip `/health`, or drop to `debug`.

@@ -8,6 +8,34 @@ export interface CloudinaryClient {
 }
 
 /**
+ * Turns whatever the Cloudinary SDK hands back into a real `Error`.
+ *
+ * The SDK's failure value is a plain object literal, so `instanceof Error` is false
+ * for it and every downstream consumer that branches on that — winston's
+ * `format.errors`, the controller's catch, the shared error handler — treats it as
+ * anonymous metadata rather than as a failure. `http_code` is carried across as a
+ * property so nothing that was in the log before is lost.
+ */
+function normaliseCloudinaryError(error: unknown): Error {
+  if (error instanceof Error) return error;
+
+  const source = (error ?? {}) as { message?: unknown; name?: unknown; http_code?: unknown };
+  const message =
+    typeof source.message === 'string' && source.message.length > 0
+      ? source.message
+      : `Cloudinary upload failed: ${JSON.stringify(error)}`;
+
+  const normalised = new Error(message);
+  if (typeof source.name === 'string' && source.name.length > 0) {
+    normalised.name = source.name;
+  }
+  if (source.http_code !== undefined) {
+    Object.assign(normalised, { http_code: source.http_code });
+  }
+  return normalised;
+}
+
+/**
  * Configures the Cloudinary SDK and returns the two operations that wrap it.
  *
  * Built once, by `createMediaController`, which is itself built once by
@@ -39,8 +67,21 @@ export function createCloudinaryClient(logger: Logger): CloudinaryClient {
         { resource_type: 'auto' },
         (error, result) => {
           if (error) {
-            logger.error('Error while Uploading media to Cloudinary:', error);
-            reject(error);
+            // Cloudinary rejects with a PLAIN OBJECT, not an Error instance —
+            // `{ message, name, http_code }`. Winston merges a plain object second
+            // argument into the log meta, and its `message` key then OVERRIDES the
+            // message passed as the first argument. Logging the raw object therefore
+            // silently discarded the call-site prefix here and again in the
+            // controller's catch, emitting two byte-identical `Invalid api_key ...`
+            // lines with no indication of which frame produced either, and no stack
+            // (`format.errors({ stack: true })` only applies to real Errors).
+            // Normalising to an Error restores both prefixes and the stack, and is
+            // what D-MD-06's "makes the cause legible in the log" intended. The
+            // rejection still travels to the same controller catch and the client
+            // still gets the same 500 — this is log-shape only.
+            const cause = normaliseCloudinaryError(error);
+            logger.error('Error while Uploading media to Cloudinary:', cause);
+            reject(cause);
             return;
           }
           // D-MD-06: the original resolved `result` unconditionally. Cloudinary types
