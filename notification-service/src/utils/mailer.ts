@@ -1,6 +1,6 @@
 import nodemailer, { type Transporter } from 'nodemailer';
 import { Notification, type NotificationType } from '../models/Notification.js';
-import { env } from '../env.js';
+import { env, emailConfigured } from '../env.js';
 
 /**
  * Arguments both call sites in `services/notificationService.ts` pass.
@@ -44,15 +44,32 @@ export function createMailer(): Mailer {
     },
   });
 
-  // Fire-and-forget credential check at startup. Its result gates nothing — a failed
-  // verify logs and the service still starts and still tries to send. Preserved.
-  transporter.verify((error) => {
-    if (error) {
-      console.error('❌ Email transporter verification failed:', error);
-    } else {
-      console.log('✅ Email transporter ready to send emails');
-    }
-  });
+  /**
+   * Fire-and-forget credential check at startup. Its result gates nothing — a failed
+   * verify logs and the service still starts and still tries to send. Preserved.
+   *
+   * Skipped entirely when the credentials are absent, because there is nothing to
+   * verify: `verify()` would spend a TLS round-trip to Gmail only to print a
+   * multi-line EAUTH stack trace on every boot of an intentionally unconfigured
+   * stack, burying real errors in the log. The one-line warning replaces it and
+   * carries the diagnostic that `env.ts` used to throw for. When the credentials ARE
+   * present, this path is byte-for-byte what it was.
+   */
+  if (!emailConfigured) {
+    console.warn(
+      '⚠️  EMAIL_USER / EMAIL_APP_PASSWORD not set — SMTP is unconfigured. ' +
+        'The service is otherwise fully operational: events are still consumed and ' +
+        'dispatched, but every outbound email will fail at send time.',
+    );
+  } else {
+    transporter.verify((error) => {
+      if (error) {
+        console.error('❌ Email transporter verification failed:', error);
+      } else {
+        console.log('✅ Email transporter ready to send emails');
+      }
+    });
+  }
 
   const sendMail = async ({
     to,

@@ -36,8 +36,11 @@ In TypeScript this cannot be written directly — `hostTeam` is not on `InviteNo
 **Defect B — most invites never reach `handleInvite` at all.** match-service's *synchronous* invite
 path publishes the notification with the `purpose` field commented out at the call site. `purpose`
 is therefore `undefined`, the dispatch switch falls through to `default`, and the event is logged
-as `Unknown notification purpose: undefined`. Only the *asynchronous* fallback path — reached when
-sync enrichment throws — sets `purpose: 'invite'`, and that path then lands on defect A.
+as `Unknown notification purpose:` — with **no value after the colon**. `logger.warn(msg, value)`
+passes `undefined` as winston's meta argument, which contributes nothing to the formatted line, so
+the log does not tell you *which* purpose was unknown. Confirmed in the running stack. Only the
+*asynchronous* fallback path — reached when sync enrichment throws — sets `purpose: 'invite'`, and
+that path then lands on defect A.
 
 This is why `purpose` is declared **optional** on `InviteNotification` and required on
 `MatchFixedNotification`: `case 'invite'` narrows correctly, and `default` is the branch that
@@ -52,8 +55,17 @@ padding.
 
 `env.ts` loads and validates the environment **at import time** — a missing variable throws there,
 before anything connects. That is why `import { env } from './env.js'` is the first line of
-`server.ts`. It now also validates `EMAIL_USER` and `EMAIL_APP_PASSWORD`, which previously surfaced
-as an SMTP authentication failure on the first outbound email rather than at boot.
+`server.ts`.
+
+`MONGODB_URL`, `REDIS_URL` and `RABBITMQ_URL` are required and still throw. `EMAIL_USER` and
+`EMAIL_APP_PASSWORD` are **not**, and an earlier draft of this document said they were. The port's
+first cut routed them through `required()` so a missing app password failed at boot rather than on
+the first outbound email. That was wrong, and the runtime audit caught it: `required()` rejects the
+empty string, `docker-compose.yml` passes `EMAIL_USER: ${EMAIL_USER:-}`, and `.env.example` ships
+both keys blank — so the documented `cp .env.example .env` setup made this service throw at import
+time, exit, and crash-loop under `restart: unless-stopped`, never becoming healthy. Both keys are
+now optional and default to `''`; `createMailer()` emits a one-line startup warning instead. Booting
+with mail unconfigured is a supported state.
 
 1. `createLogger('notification-service')`
 2. Express middleware, in order: `helmet` → `cors` → `express.json` → request logger
@@ -66,7 +78,11 @@ as an SMTP authentication failure on the first outbound email rather than at boo
    rate limiter that was never applied to a route, and that limiter is gone (D-NT-03)
 7. `startServer()`: Mongo connect → RabbitMQ connect → `createMailer()` → `createNotificationService()`
    → one consumer registered → **then** `app.listen`
-8. `SIGTERM`/`SIGINT` → `shutdown()`: stop accepting → close RabbitMQ → close Mongo → disconnect Redis
+8. `SIGTERM`/`SIGINT` → `shutdown()`: `server.close()` → close RabbitMQ → close Mongo → disconnect
+   Redis → `process.exit(0)`. Note that `server.close()`'s callback is **not awaited** — the three
+   awaited closes and the `exit` run regardless of whether an HTTP request is still in flight. In
+   practice nothing but the health probe ever hits this server, so the drain has nothing to drain;
+   it is the *bus* side of this shutdown that is worth worrying about (see below)
 
 The listener starts last on purpose: the health probe must not report ready before the queue
 subscription exists. In the original the Mongo connection was a floating `.then()` at module scope,
@@ -74,7 +90,27 @@ so the consumer could start handling events before the database was reachable (D
 
 `createMailer()` fires `transporter.verify()` as a fire-and-forget check. Its result gates nothing —
 a failed verification logs `❌ Email transporter verification failed` and the service starts and
-sends anyway.
+sends anyway. When the credentials are absent it does not call `verify()` at all, since there is
+nothing to verify and the alternative is a multi-line EAUTH stack trace on every boot of an
+intentionally unconfigured stack.
+
+### Observed startup, live stack
+
+The log order at boot is *not* the code order. `Connected to Redis` lands first, because the Redis
+client is constructed at module scope (step 6) and connects on its own while `startServer()` is
+still awaiting Mongo. The rest follows the sequence above:
+
+```
+Connected to Redis
+Connected to MongoDB
+Connected to RabbitMQ                              ← emitted by @uff/shared
+RabbitMQ connection established successfully       ← emitted here; the two are one event
+Subscribed to notification on queue notification.notification
+notification-service is running on port 3005
+```
+
+Both RabbitMQ lines are real and adjacent — one from the shared client, one from `server.ts`. They
+do not indicate two connections.
 
 ## HTTP paths
 
@@ -142,8 +178,20 @@ So `sendMail` **rejects on the success path**. In `handleMatchFixed` that means 
 "match fixed" event delivers exactly one email — to the host — and logs an error claiming the send
 failed.
 
-This is derived by reading the control flow; it has not been observed against a live SMTP server.
-It is preserved under D-NT-06.
+**Runtime status of this claim.** The *cancellation* is confirmed; the *success path* is still
+inferred. A `match.fixed` event on the live stack (`rejectedTeams: []`, so two emails were due)
+produced exactly **one** `❌ Error sending email` and then
+`Error in sending mail for fixed match Notification validation failed: recipientTeamId … type …`.
+The second email was never attempted. So "one failing `sendMail` cancels every email behind it" is
+observed fact, and the `ValidationError` is observed reaching the caller.
+
+What is *not* yet observed is the same thing happening after a **successful** send — the stack's
+SMTP credentials are placeholders, so `transporter.sendMail` throws `EAUTH` first and the failure
+branch is what runs. Both branches issue the same impossible `Notification.create`, so the outcome
+is the same either way; only the "the mail actually went out" half is untested. `notifications` in
+`uff-notification` is empty (`countDocuments() === 0`), as predicted.
+
+Preserved under D-NT-06.
 
 ### Errors never reach the dead-letter queue
 
@@ -153,6 +201,49 @@ So the `football.dlq` that D-05 introduced is **unreachable from this service**:
 acked and gone, exactly as before the port. Same situation as identity-service; backlog item 12.
 Removing those internal `try`/`catch` blocks is what would activate the DLQ, and that is a
 behaviour change the migration did not make.
+
+## Runtime audit — observed against the live stack
+
+Everything in this section was read off the running `uni_football_fixer` stack, not inferred.
+
+| Claim | Observed |
+|---|---|
+| `GET /health` → 200 when Mongo is up | `200 {"service":"notification-service","status":"ok","mongo":1}` |
+| Any other path → 401 | `401 {"message":"Authentication required ! Please Login to continue"}` |
+| `notification.notification` is named + durable | `durable=true`, `consumers=1`, `messages=0`, `prefetch=10` |
+| Bound to `football.events` on key `notification` | confirmed; the only binding besides the default exchange |
+| The DLQ is unreachable from this service | `football.dlq` = 0 messages after a full `match.fixed` failure |
+| The `notifications` collection is never written | `uff-notification.notifications` = 0 documents |
+| The service is a leaf and publishes nothing | no publish lines in 200 lines of log |
+
+Container: `restarts=0`, health `healthy`, `FailingStreak=0`. No connection retries, no reconnects,
+no stack traces other than the SMTP/Mongoose pair documented above.
+
+### Fragility worth knowing about
+
+**The health probe cannot see the only thing this service does.** `/health` reports
+`mongoose.connection.readyState` and nothing else. `@uff/shared/rabbitmq` has **no reconnect logic**
+— `connection.on('close')` logs `RabbitMQ connection closed` at `warn` and stops there. So if the
+broker restarts or the connection drops, this service keeps answering `200 ok`, keeps passing its
+compose health check, is never restarted by `restart: unless-stopped`, and silently consumes nothing
+for as long as it stays up. Every notification published in that window sits in the queue (durable,
+so at least it is not lost) until someone notices. For a service whose entire purpose is one
+consumer, a Mongo-only readiness signal is the wrong signal. Fixing it properly means exporting a
+connection-state accessor from `@uff/shared`, which is outside this service.
+
+**Shutdown does not drain in-flight messages.** `consumeEvent` launches the handler in a
+non-awaited `void (async () => …)`, and `shutdown()` calls `closeRabbitMQ()` — which closes the
+channel — without any knowledge of handlers still running. A `SIGTERM` landing mid-`handleMatchFixed`
+closes the channel before the `ack`, so the broker redelivers on restart. With no idempotency key
+(backlog item 8), that redelivery re-sends every email the handler had already sent. The durable
+queue made this *more* likely than it was before the port, not less. Also outside this service to
+fix, since the ack lifecycle lives in `@uff/shared`.
+
+**SMTP is a hard external dependency with no queue, retry, or backoff.** Gmail is reached
+synchronously inside the handler. A slow or throttled Gmail blocks the handler, and with
+`prefetch(10)` a persistent stall parks the consumer. Every failure is logged and dropped —
+combined with the swallowed-error/no-DLQ behaviour above, a Gmail outage silently discards every
+notification for its duration.
 
 ## What the port changed
 
