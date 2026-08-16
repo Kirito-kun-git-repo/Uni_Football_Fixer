@@ -17,7 +17,8 @@
     "dev": "nodemon src/index.js",
     "test": "jest",
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "smoke": "node scripts/smoke-test.mjs"
   },
   "author": "",
   "license": "ISC",
