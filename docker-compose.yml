@@ -1,0 +1,200 @@
+# Full stack: 5 microservices + MongoDB + Redis + RabbitMQ.
+#
+# Only api-gateway publishes a port. The datastores and the four downstream services
+# are reachable ONLY on the internal `uff` network, which is what makes the x-team-id
+# trust model safe here: a service that cannot be reached directly cannot have its
+# identity header forged (backlog item 1).
+#
+#   docker compose up -d --build
+#   npm run smoke
+
+services:
+  mongo:
+    image: mongo:8
+    # No published port. The host's 27017 may be in use, and nothing outside the
+    # compose network needs to reach the database.
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [uff]
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [uff]
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    # Management UI bound to LOCALHOST ONLY — useful for inspecting football.dlq
+    # during a failed smoke test, not exposed to the network.
+    ports:
+      - "127.0.0.1:15672:15672"
+    volumes:
+      # REQUIRED, not optional. D-05 made the exchange and queues durable, but
+      # durability is written to disk inside the container — without this volume a
+      # `docker compose down` silently discards every durable queue and its backlog,
+      # which would make the whole event-bus fix meaningless across restarts.
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks: [uff]
+    restart: unless-stopped
+
+  identity-service:
+    build:
+      context: .
+      dockerfile: identity-service/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      MONGODB_URL: mongodb://mongo:27017/uff-identity
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://rabbitmq:5672
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
+    depends_on:
+      mongo: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [uff]
+    restart: unless-stopped
+
+  media-service:
+    build:
+      context: .
+      dockerfile: media-service/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 3003
+      MONGODB_URL: mongodb://mongo:27017/uff-media
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://rabbitmq:5672
+      # Cloudinary is a real external service; uploads fail without valid values.
+      CLOUD_NAME: ${CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+    depends_on:
+      mongo: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3003/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [uff]
+    restart: unless-stopped
+
+  match-service:
+    build:
+      context: .
+      dockerfile: match-service/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 3004
+      MONGODB_URL: mongodb://mongo:27017/uff-match
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://rabbitmq:5672
+      # Replaces the hardcoded http://localhost:3000 (D-MT-02). match-service calls
+      # back through the gateway for synchronous enrichment, so this must resolve
+      # inside the compose network.
+      GATEWAY_URL: http://api-gateway:3000
+    depends_on:
+      mongo: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3004/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [uff]
+    restart: unless-stopped
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: notification-service/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 3005
+      MONGODB_URL: mongodb://mongo:27017/uff-notification
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://rabbitmq:5672
+      # Gmail app password. Left blank by default: the smoke test asserts DB state,
+      # not delivered mail, so the stack must come up without real credentials.
+      EMAIL_USER: ${EMAIL_USER:-}
+      EMAIL_APP_PASSWORD: ${EMAIL_APP_PASSWORD:-}
+    depends_on:
+      mongo: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3005/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [uff]
+    restart: unless-stopped
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    # The ONLY published application port. Everything else is internal.
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
+      IDENTITY_SERVICE_URL: http://identity-service:3001
+      MEDIA_SERVICE_URL: http://media-service:3003
+      MATCH_SERVICE_URL: http://match-service:3004
+    depends_on:
+      redis: { condition: service_healthy }
+      identity-service: { condition: service_healthy }
+      media-service: { condition: service_healthy }
+      match-service: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [uff]
+    restart: unless-stopped
+
+networks:
+  uff:
+    driver: bridge
+
+volumes:
+  mongo-data:
+  redis-data:
+  rabbitmq-data:

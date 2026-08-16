@@ -1,5 +1,5 @@
 .env
-.env.example
+# .env.example is deliberately TRACKED — an untracked template helps nobody.
 node_modules/
 .qodo
 
