@@ -1,34 +1,33 @@
 {
   "name": "match-service",
   "version": "1.0.0",
-  "description": "",
-  "main": "src/server.js",
+  "private": true,
+  "type": "module",
+  "main": "dist/server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "devDependencies": {
-    "nodemon": "^3.1.10"
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts"
   },
   "dependencies": {
-    "amqplib": "^0.10.9",
-    "axios": "^1.11.0",
-    "cors": "^2.8.5",
-    "dotenv": "^17.2.1",
-    "express": "^5.1.0",
-    "express-http-proxy": "^2.1.1",
-    "express-rate-limit": "^8.0.1",
-    "helmet": "^8.1.0",
-    "ioredis": "^5.7.0",
-    "jsonwebtoken": "^9.0.2",
-    "rate-limit-redis": "^4.2.2",
-    "rate-limiter-flexible": "^7.3.0",
-    "redis": "^5.8.2",
-    "winston": "^3.17.0"
+    "@uff/shared": "*",
+    "axios": "^1.19.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "helmet": "^8.3.0",
+    "ioredis": "^6.0.0",
+    "mongoose": "^9.9.2"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }
