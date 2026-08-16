@@ -210,8 +210,10 @@ exactly one consumer each.
 ## Verified against the running stack
 
 Audited against the live compose stack (`uni_football_fixer`), the full container log plus direct
-probes from inside the container. Everything above was checked; what follows is what the runtime
-actually showed. **No `error`-level line and no stack trace appeared** across the whole log —
+probes from inside the container. These observations are of the **pre-fix** build (`7fd2b02`) — they
+are what prompted "Post-audit fixes" below, and the four items fixed there no longer behave as
+described here. Everything else in this section was re-confirmed by the 19/19 smoke run against the
+rebuilt images. Everything above was checked; what follows is what the runtime actually showed. **No `error`-level line and no stack trace appeared** across the whole log —
 startup, the smoke-test traffic, and the audit's own probes. The only non-`info` output was one
 Mongoose deprecation warning on stderr (below) and four `warn: Access attempted without team ID`
 lines, all four produced by this audit deliberately calling protected routes without the header.
@@ -291,8 +293,8 @@ Things that work in the current stack but rest on assumptions the code does not 
 Everything above this section describes a port whose governing rule was *reproduce the original,
 report defects rather than fix them*. These four changes are the first deliberate departures from
 it, made after the runtime audit and authorised explicitly — three by the user, and the fourth
-(`await publishEvent`) by the coordinator. **They are the reason this service's image is stale: none
-of them is in the running build.**
+(`await publishEvent`) by the coordinator. **All four are built, exercised and covered by
+`verified/smoke-19-of-19` at `5e19435`.**
 
 | # | Change | Files | Why it is not just a port |
 |---|---|---|---|
@@ -311,8 +313,26 @@ What was deliberately **not** touched while doing this:
 - **The commented-out `purpose: 'invite'` stays commented out** (issue 3), along with every other
   defect listed under "What the port did NOT change".
 
-**Verification status: typecheck only.** `npm run typecheck -w match-service` passes clean. Nothing
-here has been exercised at runtime — the stack was already down when these were written, and the
-shutdown path in particular is the kind of change that only proves itself against a real SIGTERM
-with a real in-flight request. Treat all four as unverified until the next rebuild and smoke run,
-and re-check `Shutdown complete` actually appears in the logs on the first `docker compose stop`.
+**Verification status: built and exercised.** Written under a typecheck-only caveat — the stack was
+down at the time — and since rebuilt and smoke-tested at `5e19435`, 19/19 including both
+RabbitMQ-crossing assertions, DLQ 0, the three consumer queues intact across the stop/start.
+
+The shutdown path met its acceptance criterion on the first `docker compose stop match-service`,
+with the gateway holding keep-alive sockets open from a completed smoke run:
+
+```
+info: SIGTERM received, shutting down
+info: HTTP server closed
+warn: RabbitMQ connection closed
+info: RabbitMQ connection closed cleanly
+info: Shutdown complete
+```
+
+0.19s wall, and no `Shutdown exceeded 8000ms, forcing exit` — so `closeIdleConnections()` did the
+work it was added for. That was the failure mode worth guarding against: without it the drain looks
+correct in review and rides to the deadline on every stop, because parked keep-alive sockets keep
+`close()` pending. Measured now, not reasoned.
+
+**Still unproven:** the drain was exercised against *idle* keep-alive connections, not against a
+genuinely in-flight request suspended mid-handler. That is the case the 8s deadline exists for, and
+nothing has tested it.
