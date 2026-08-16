@@ -2,3 +2,10 @@
 .env.example
 node_modules/
 .qodo
+
+# build output
+dist/
+*.tsbuildinfo
+
+# logs (D-03: winston file transports removed in favour of stdout)
+*.log

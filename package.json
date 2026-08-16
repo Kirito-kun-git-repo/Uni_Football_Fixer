@@ -2,11 +2,22 @@
   "name": "football_fixer",
   "version": "1.0.0",
   "description": "A football match scheduling application",
+  "private": true,
   "main": "src/index.js",
+  "workspaces": [
+    "packages/shared",
+    "api-gateway",
+    "identity-service",
+    "match-service",
+    "media-service",
+    "notification-service"
+  ],
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "test": "jest"
+    "test": "jest",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "author": "",
   "license": "ISC",
@@ -30,6 +41,6 @@
     "nodemon": "^3.1.10"
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=24"
   }
 }
