@@ -10,7 +10,11 @@
 
 services:
   mongo:
-    image: mongo:8
+    # Pinned to the 8.2 patch line, not bare `mongo:8`. MongoDB refuses to start on
+    # Linux kernel 6.19+ (SERVER-121912) and the older 8.x tags carry that hard stop,
+    # so on a current kernel the whole stack fails with "dependency mongo failed to
+    # start". 8.2 has the fix. Same major version, same behaviour.
+    image: mongo:8.2
     # No published port. The host's 27017 may be in use, and nothing outside the
     # compose network needs to reach the database.
     volumes:
